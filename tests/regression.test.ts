@@ -3,6 +3,9 @@ import { beforeEach, test } from "node:test";
 import { ARCHETYPES, ITEMS, RANKS, SHOP_ITEMS, TITLES, computeTargets, computePenaltyTargets, rankFromLevel, rollLoot, POSE_THRESHOLDS, SQUAT_FALLBACK } from "../src/data.ts";
 import { GATE_BOSS_STATS, MONARCH_PATHS, PATH_TIERS, PATH_FLOURISH_IDS, gateTitleId, getTier } from "../src/data/monarchPaths.ts";
 import { deriveBattleStats, readinessFromFatigue, rollAttackDamage, signatureDamage } from "../src/lib/battle.ts";
+import { HUNTER_CLASSES, classKitCost, classKitLevelCap, classSkills, defaultClassFor, getClass } from "../src/data/classes.ts";
+import { STORY_BEAT_LEVELS, STORY_EPISODES, STORY_REGIONS, buildEpisode, getEpisode } from "../src/data/story.ts";
+import { currentEpisode, enemyFor, episodeAvailability, expectedCombat, forecastFight, kitGuarantee, storyTotals } from "../src/lib/story.ts";
 import { fatigueEarned, goldEarned, mondayKey, pathBonuses, shopCost } from "../src/lib/monarch.ts";
 import { awardXP } from "../src/lib/progression.ts";
 import { grantLoot, resolveLoot } from "../src/lib/loot.ts";
@@ -171,6 +174,7 @@ test("Starting title 'Awakened — World's Weakest Hunter' is auto-equipped at l
 });
 
 test("A level-up does not move the daily target; completion is paid only once", () => {
+  const startingPts = useGame.getState().pts;
   for (const key of ["push", "sit", "squat", "run"] as const) useGame.getState().toggleCheck(key);
   const state = useGame.getState();
   assert.equal(state.level, 2);
@@ -181,7 +185,8 @@ test("A level-up does not move the daily target; completion is paid only once", 
   assert.match(state.history[0].items[0], /^50 /);
   useGame.getState().toggleCheck("push");
   useGame.getState().logExercise("push", 50);
-  assert.equal(useGame.getState().pts, 8);
+  // 5 for the completed daily plus the level-up's 3, banked exactly once.
+  assert.equal(useGame.getState().pts, startingPts + 8);
   assert.equal(useGame.getState().history.length, 1);
 });
 
@@ -538,4 +543,190 @@ test("Gate moves cost points after a clear, are never auto-granted, and the Tier
   // Ascension cannot be forged by a save that never learned the ultimate.
   const forged = normalizeSave({ name: "Test Hunter", level: 120, monarchPath: "shadows", ascended: true, learnedMoves: ["shadows:1"] });
   assert.equal(forged.ascended, false);
+});
+
+test("Every class kit is grounded, distinct, and fully owned by level 30", () => {
+  assert.equal(HUNTER_CLASSES.length, 4);
+  assert.equal(new Set(HUNTER_CLASSES.map((entry) => entry.id)).size, 4);
+  const allIds = new Set<string>();
+  for (const entry of HUNTER_CLASSES) {
+    assert.equal(entry.skills.length, 8, `${entry.id} does not have eight nodes`);
+    assert.equal(entry.skills.filter((skill) => skill.starter).length, 1, `${entry.id} needs exactly one free starter`);
+    // Grounded: nothing in the level 1-40 kit hits harder than a Monarch ultimate.
+    for (const skill of entry.skills) {
+      assert.ok(skill.power <= 1.6, `${skill.name} hits too hard for a basic kit`);
+      assert.ok((skill.scale ?? 0) <= 0.25, `${skill.name} buffs too much for a basic kit`);
+      assert.ok(!allIds.has(skill.id), `duplicate skill id ${skill.id}`);
+      allIds.add(skill.id);
+      assert.ok(skill.level >= 1 && skill.level <= 30, `${skill.name} is gated past level 30`);
+    }
+    // The brief's guarantee: everything is affordable and reachable by level 30.
+    const guarantee = kitGuarantee(entry.id);
+    assert.equal(guarantee.cost, classKitCost(entry.id));
+    assert.equal(guarantee.levelCap, classKitLevelCap(entry.id));
+    assert.equal(guarantee.affordable, true, `${entry.id} cannot own its kit by level 30`);
+    assert.ok(guarantee.cost < 3 * 29, `${entry.id} kit leaves no points for stats`);
+    // One node per role, so no class is strictly better than another.
+    assert.deepEqual(entry.skills.map((skill) => skill.role),
+      ["opener", "weaken", "empower", "heal", "empower", "finisher", "drain", "finisher"]);
+  }
+  assert.deepEqual(HUNTER_CLASSES.map((entry) => entry.skills.map((skill) => skill.power)),
+    HUNTER_CLASSES.map(() => [1.1, 0.9, 0, 0, 0, 1.4, 1, 1.6]));
+  assert.equal(defaultClassFor("assassin"), "assassin");
+  assert.equal(getClass("mage")?.name, "Mage");
+});
+
+test("Act I is one quest per level from 1 to 40, each with its own enemy and cost", () => {
+  assert.equal(STORY_EPISODES.length, 40);
+  assert.equal(STORY_REGIONS.length, 4);
+  assert.deepEqual(STORY_BEAT_LEVELS, [1, 5, 10, 15, 20, 25, 30, 35, 39, 40]);
+  // Regions tile the whole act with no gaps and no overlaps.
+  for (let index = 1; index < STORY_REGIONS.length; index++) {
+    assert.equal(STORY_REGIONS[index].from, STORY_REGIONS[index - 1].to + 1);
+  }
+  assert.equal(STORY_REGIONS[0].from, 1);
+  assert.equal(STORY_REGIONS[STORY_REGIONS.length - 1].to, 40);
+  for (let level = 1; level <= 40; level++) {
+    const episode = STORY_EPISODES[level - 1];
+    assert.equal(episode.level, level);
+    assert.equal(getEpisode(level)?.enemy, episode.enemy);
+    assert.deepEqual(episode, buildEpisode(level), "episode composition must be deterministic");
+    assert.ok(episode.enemy.length > 2 && episode.title.length > 2);
+    assert.ok(episode.prose.length > 40 && episode.briefing.length > 20);
+    assert.ok(episode.cost >= 1 && episode.cost <= 4);
+    assert.ok(episode.gold > 0);
+    assert.ok(STORY_REGIONS.some((region) => region.id === episode.region));
+  }
+  // Within a region every tile is its own quest, with its own enemy and objective.
+  for (const region of STORY_REGIONS) {
+    const tiles = STORY_EPISODES.filter((episode) => episode.region === region.id);
+    const objectives = new Set(tiles.map((episode) => `${episode.title}|${episode.enemy}`));
+    assert.equal(objectives.size, tiles.length, `${region.name} repeats a quest`);
+    assert.ok(tiles.length >= 8, `${region.name} is too short to be a region`);
+  }
+  // Bosses carry art; the composed fights do not pretend to.
+  for (const level of STORY_BEAT_LEVELS) {
+    if (["boss", "job"].includes(getEpisode(level)!.kind)) assert.ok(getEpisode(level)!.enemyArt);
+  }
+  // Act I is payable out of three points a level, with stat points left over.
+  const spentThrough30 = STORY_EPISODES.filter((episode) => episode.level <= 30).reduce((total, episode) => total + episode.cost, 0);
+  const kit = classKitCost("fighter");
+  assert.ok(spentThrough30 + kit < 3 * 29, `act + kit (${spentThrough30 + kit}) exceeds level-30 income (${3 * 29})`);
+  const totals = storyTotals(STORY_EPISODES.map((episode) => episode.level));
+  assert.equal(totals.clears, 40);
+});
+
+test("Enemies are level-scaled, and every tile is winnable with the kit available at that level", () => {
+  for (const episode of STORY_EPISODES) {
+    const enemy = enemyFor(episode);
+    const { combat } = expectedCombat(episode.level);
+    assert.ok(enemy.hp > 0 && enemy.atk > 0 && enemy.def >= 0);
+    // The enemy must never one-shot: even a bad trade survives a few turns.
+    const enemyDamage = Math.max(1, enemy.atk - combat.def);
+    assert.ok(Math.ceil(combat.maxHP / enemyDamage) >= 5, `tile ${episode.level} can kill a hunter in under 5 turns`);
+    // Fighters get their kit; the forecast must say it is survivable.
+    const withKit = forecastFight(enemy, combat, true);
+    assert.ok(withKit.turnsToKill <= 12, `tile ${episode.level} takes ${withKit.turnsToKill} turns to clear`);
+    assert.ok(withKit.turnsToSurvive >= withKit.turnsToKill, `tile ${episode.level} is a loss even with a full kit`);
+    // The tutorial must be winnable with nothing but the free starter skill.
+    if (episode.level <= 5) {
+      const starterOnly = forecastFight(enemy, combat, false);
+      assert.ok(starterOnly.turnsToSurvive >= starterOnly.turnsToKill, `early tile ${episode.level} needs the whole kit`);
+    }
+  }
+});
+
+test("Story tiles spend points, gate on level, and hand over a free skill on a beat", () => {
+  // Locked until the hunter's level reaches the tile.
+  reset({ level: 3, pts: 20, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: [], monarchPath: null });
+  const tile10 = getEpisode(10)!;
+  assert.equal(episodeAvailability(useGame.getState(), tile10).status, "locked");
+  assert.equal(useGame.getState().clearEpisode(10), false);
+
+  // Unlocked and affordable: clearing spends the tile's points and banks the gold.
+  reset({ level: 10, pts: 5, gold: 0, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: [], monarchPath: null });
+  assert.equal(episodeAvailability(useGame.getState(), tile10).status, "ready");
+  assert.equal(useGame.getState().clearEpisode(10), true);
+  assert.deepEqual(useGame.getState().storyCleared, [10]);
+  assert.equal(useGame.getState().pts, 5 - tile10.cost);
+  assert.equal(useGame.getState().gold, tile10.gold);
+  // A beat grants the next unlearned skill free.
+  assert.deepEqual(useGame.getState().basicSkills, ["fighter:1", "fighter:2"]);
+  // Replays cost nothing and pay nothing.
+  const gold = useGame.getState().gold;
+  assert.equal(useGame.getState().clearEpisode(10), true);
+  assert.equal(useGame.getState().gold, gold);
+
+  // No points, no entry.
+  reset({ level: 20, pts: 0, gameClass: "mage", basicSkills: ["mage:1"], storyCleared: [], monarchPath: null });
+  const tile20 = getEpisode(20)!;
+  assert.equal(episodeAvailability(useGame.getState(), tile20).status, "unaffordable");
+  assert.equal(useGame.getState().clearEpisode(20), false);
+
+  // The Job Change tile waits for the ceremony itself.
+  reset({ level: 40, pts: 9, gameClass: "ranger", basicSkills: ["ranger:1"], storyCleared: [], monarchPath: null });
+  assert.equal(episodeAvailability(useGame.getState(), getEpisode(40)!).status, "needs-path");
+  const current = useGame.getState();
+  assert.equal(currentEpisode({ storyCleared: current.storyCleared }).level, 1);
+});
+
+test("Class skills cost points, respect their level gate, and survive a save round trip", () => {
+  reset({ level: 30, pts: 10, gameClass: "assassin", basicSkills: ["assassin:1"] });
+  useGame.getState().learnBasicSkill("assassin:2");
+  assert.deepEqual(useGame.getState().basicSkills, ["assassin:1", "assassin:2"]);
+  assert.equal(useGame.getState().pts, 8);
+  // Twice is not allowed, and an unknown id is ignored.
+  useGame.getState().learnBasicSkill("assassin:2");
+  assert.equal(useGame.getState().pts, 8);
+  useGame.getState().learnBasicSkill("fighter:3");
+  assert.equal(useGame.getState().pts, 8);
+  // Level gates hold even when the points are there.
+  reset({ level: 4, pts: 40, gameClass: "fighter", basicSkills: ["fighter:1"] });
+  useGame.getState().learnBasicSkill("fighter:8");
+  assert.deepEqual(useGame.getState().basicSkills, ["fighter:1"]);
+
+  // Normalization keeps only this class's ids and always restores the starter.
+  const foreign = normalizeSave({ name: "Test Hunter", level: 30, gameClass: "mage", basicSkills: ["fighter:2", "mage:3", "junk"] });
+  assert.deepEqual(foreign.basicSkills, ["mage:1", "mage:3"]);
+  const noClass = normalizeSave({ name: "Test Hunter", level: 30, archetype: "vanguard" });
+  assert.equal(noClass.gameClass, "ranger");
+  assert.deepEqual(noClass.basicSkills, ["ranger:1"]);
+  // Story progress cannot claim levels the hunter never reached.
+  const ahead = normalizeSave({ name: "Test Hunter", level: 5, storyCleared: [3, 9, 30, 0, -2, 99] });
+  assert.deepEqual(ahead.storyCleared, [3]);
+});
+
+test("A perfect run through Act I reaches level 30 with a full kit and points to spare", () => {
+  // Walk the act as a player would: level, spend on the tree when a node opens,
+  // clear the tile, repeat. This is the brief's "all of them by level 30" check.
+  const id: "fighter" | "mage" | "assassin" | "ranger" = "mage";
+  const kit = classSkills(id);
+  let pts = 3; // the awakening grant, so tile 1 is affordable on day one
+  let learned = [kit[0].id];
+  let cleared: number[] = [];
+  for (let level = 1; level <= 30; level++) {
+    if (level > 1) pts += 3; // a level's pay
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (const skill of kit) {
+        if (skill.starter || learned.includes(skill.id)) continue;
+        if (skill.level <= level && pts >= skill.cost) {
+          pts -= skill.cost;
+          learned.push(skill.id);
+          progressed = true;
+        }
+      }
+    }
+    const episode = getEpisode(level)!;
+    if (pts >= episode.cost) {
+      const reward = kit.find((skill) => !skill.starter && !learned.includes(skill.id));
+      pts -= episode.cost;
+      if (episode.grantsSkill && reward) learned.push(reward.id);
+      cleared.push(level);
+    }
+  }
+  assert.equal(cleared.length, 30, "every tile through level 30 should be affordable");
+  assert.equal(learned.length, 8, "the hunter must own all eight nodes by level 30");
+  assert.ok(pts >= 0);
 });
