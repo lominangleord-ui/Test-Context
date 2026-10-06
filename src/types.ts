@@ -1,0 +1,225 @@
+export type Screen = "loading" | "intro" | "awaken" | "main";
+export type Tab = "quest" | "path" | "titles" | "pact" | "log";
+export type ThemeId = "system-blue" | "penalty-red" | "shadow-purple" | "monarch-gold";
+export type ArchetypeId = "balanced" | "assassin" | "monarch" | "vanguard";
+export type ExerciseKey = "push" | "sit" | "squat" | "run";
+export type CameraExercise = Exclude<ExerciseKey, "run">;
+export type CameraPurpose = "daily" | "penalty";
+export type StatKey = "str" | "agi" | "vit";
+export type PenaltyTargets = Record<"push" | "sit" | "run", number>;
+export type PathId = "shadows" | "destruction" | "white-flames" | "fangs" | "frost" | "iron-body" | "beginning" | "plagues" | "transfiguration";
+export type TierNumber = 1 | 2 | 3 | 4 | 5;
+
+export type PathSkill =
+  | { kind: "goldBonus" | "fatigueResist" | "lootLuck"; amount: number; label: string }
+  | { kind: "recoveryBoost"; mode: "staminaDiscount" | "potionFatigue" | "draftPower"; amount: number; label: string }
+  | { kind: "streakShield"; charges: 1; label: string }
+  | { kind: "signatureMove"; action: "clearFatigue" | "token" | "loot"; name: string; label: string };
+
+export interface PathTier {
+  gateName: string;
+  title: string;
+  skills: PathSkill[];
+}
+
+export interface MonarchPath {
+  id: PathId;
+  name: string;
+  jobClass: string;
+  flavor: string;
+  signatureExercise: CameraExercise;
+  icon: string;
+  color: string;
+  battleMove: string;
+  tiers: readonly [PathTier, PathTier, PathTier, PathTier, PathTier];
+}
+
+export interface Item {
+  id: number;
+  name: string;
+  icon: string;
+  desc: string;
+  theme?: Exclude<ThemeId, "penalty-red">;
+  pathFlourish?: PathId;
+  pool: "cosmetic" | "starter" | "flourish";
+}
+
+export interface ShopItem {
+  id: number;
+  name: string;
+  icon: string;
+  desc: string;
+  cost: number;
+  kind: "recovery" | "stamina" | "elixir" | "token" | "sigil";
+}
+
+export type LootRoll =
+  | { kind: "potions"; amount: number }
+  | { kind: "token"; amount: number }
+  | { kind: "gold"; amount: number }
+  | { kind: "theme"; themeId: number }
+  | { kind: "flourish"; flourishId: number };
+
+export interface TitleDef {
+  id: number;
+  name: string;
+  icon: string;
+  desc: string;
+  level?: number;
+  streak?: number;
+}
+
+export interface SpecialQuest {
+  id: number;
+  name: string;
+  desc: string;
+  xp: number;
+  stat?: StatKey;
+  statAmt?: number;
+}
+
+export interface HistoryEntry {
+  date: string;
+  items: string[];
+  xpGain: number;
+}
+
+export interface SlNotification {
+  title: string;
+  message: string;
+  type: string;
+}
+
+export interface Settings {
+  adaptiveMode: boolean;
+  hardcoreMode: boolean;
+  voiceCounting: boolean;
+  screenShake: boolean;
+  floatingNumbers: boolean;
+  remindersEnabled: boolean;
+  fastMode: boolean;
+}
+
+/* ════════ BLOOD PACT — real-world stakes ════════ */
+export type PactStake = "witness" | "forfeit" | "ironvow";
+
+export interface BloodPact {
+  active: boolean;
+  stake: PactStake;
+  /** Name of the real person holding you accountable. */
+  witness: string;
+  /** The real-world consequence the player declared, in their own words. */
+  terms: string;
+  /** Unix ms when the pact was sworn. */
+  sworn: number;
+  /** Locally recorded breaches. No automatic sharing. */
+  breaches: number;
+}
+
+export interface PactLedgerEntry {
+  date: string;
+  event: string;
+  stake: PactStake;
+  terms: string;
+  witness: string;
+}
+
+export interface GameState {
+  // meta
+  screen: Screen;
+  tab: Tab;
+  name: string;
+  archetype: ArchetypeId;
+  avatar: string;
+
+  // progression
+  level: number;
+  pts: number;
+  streak: number;
+  hp: number;
+  hpMax: number;
+  mp: number;
+  mpMax: number;
+  xp: number;
+  xpMax: number;
+  str: number;
+  agi: number;
+  vit: number;
+
+  // penalty / lockdown
+  penalty: boolean;
+  penaltyEnd: number;
+  penPushDone: number;
+  penSitDone: number;
+  penRunDone: boolean;
+  penaltyTargets: PenaltyTargets | null;
+  inLockdown: boolean;
+  relapseTokens: number;
+
+  // daily quest
+  dailyDate: string;
+  questDate: string;
+  push: number;
+  sit: number;
+  squat: number;
+  run: number;
+  pushDone: boolean;
+  sitDone: boolean;
+  squatDone: boolean;
+  runDone: boolean;
+  dailyCompleted: boolean;
+  // Lock the day's level when training starts, so a level-up cannot raise its goals.
+  dailyTargetLevel: number | null;
+  lastReminderCheck: number;
+
+  // adaptive daily modifiers (computed at day boundary)
+  dayMode: "classic" | "recovery" | "overdrive";
+
+  // economy / items
+  gold: number;
+  potions: number;
+  staminaDrafts: number;
+  inventory: number[];
+  equippedTitle: number | string | null;
+  notifiedTitles: number[];
+
+  // cosmetic theme
+  hudTheme: ThemeId;
+  equippedFlourishId: number | null;
+
+  // Level 40 Job Change and independent, one-time battle Gates.
+  monarchPath: PathId | null;
+  clearedGates: TierNumber[];
+  shieldCharges: number;
+  shieldWeek: string;
+  signatureUsedDate: string;
+  elixirs: number;
+
+  // fatigue
+  fatigueLevel: number;
+
+  // optional special quest (no timer)
+  specialActive: boolean;
+  specialQuest: SpecialQuest | null;
+
+  // reward
+  rewardChoicePending: boolean;
+
+  // hardcore resurrection debuff
+  resurrectDebuff: number; // stats reduced count remaining to heal back
+  // set at death-reset when Hardcore Mode is on; consumed on next awaken.
+  // Persisted so a reload between dying and re-naming can't drop the debuff.
+  pendingHardcoreDebuff: boolean;
+
+  // blood pact (real-world stakes)
+  pact: BloodPact;
+  pactLedger: PactLedgerEntry[];
+
+  // logs
+  history: HistoryEntry[];
+
+  // ui queues (transient but persisted harmlessly)
+  notifications: SlNotification[];
+
+  settings: Settings;
+}

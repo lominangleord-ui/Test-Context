@@ -1,0 +1,12 @@
+{
+  "name": "The System - Solo Leveling Fitness HUD",
+  "short_name": "The System",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#01040a",
+  "theme_color": "#1e9bff",
+  "icons": [
+    { "src": "/system-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
