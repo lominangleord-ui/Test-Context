@@ -457,7 +457,7 @@ export const useGame = create<Store>()(
           audio.chime();
           get().notify({
             title: "Hunter Class Registered",
-            message: `<b>${getClass(id)?.name}</b>. Your skill tree is open in the GAME tab.`,
+            message: `<b>${getClass(id)?.name}</b>. Your skill tree is accessible via the ✦ button in the top bar.`,
             type: "System",
           });
         },
