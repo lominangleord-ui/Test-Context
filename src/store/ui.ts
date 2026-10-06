@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { CameraExercise, CameraPurpose, TierNumber } from "../types";
-import { PATH_TIERS, pathForClass } from "../data/monarchPaths";
+import { getPath, PATH_TIERS } from "../data/monarchPaths";
 import { getEpisode } from "../data/story";
 import { episodeAvailability } from "../lib/story";
 import { useGame } from "./game";
@@ -53,7 +53,7 @@ export const useUi = create<UiState>((set) => ({
   },
   openGateBattle: (tier) => {
     const state = useGame.getState();
-    const path = pathForClass(state.gameClass);
+    const path = getPath(state.monarchPath);
     const band = PATH_TIERS[tier - 1];
     if (!path || !band || state.level < band.min || state.dead || state.inLockdown) return;
     audio.unlock();

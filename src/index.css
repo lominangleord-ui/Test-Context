@@ -935,14 +935,16 @@ button.battle-messagebox { font:inherit; cursor:pointer; }
 .nes-tile.data-current .nes-tile-num { color: var(--cyan-bright); }
 .nes-tile.data-open { border-color: #ffffff2e; }
 .nes-tile.data-locked {
-  opacity: .45;
-  cursor: not-allowed;
-  filter: grayscale(.4);
+  opacity: .55;
+  cursor: pointer;
+  filter: grayscale(.3);
 }
 .nes-tile.data-locked:hover {
-  transform: none;
-  border-color: #ffffff22;
-  box-shadow: inset 2px 2px 0 #ffffff14, inset -2px -2px 0 #00000055;
+  border-color: #ffffff44;
+  transform: translateY(-1px);
+  box-shadow:
+    inset 2px 2px 0 #ffffff1a,
+    inset -2px -2px 0 #00000055;
 }
 @keyframes nes-blink {
   0%, 100% { box-shadow: inset 2px 2px 0 #ffffff28, inset -2px -2px 0 #00000055, 0 0 12px var(--cyan-glow); }

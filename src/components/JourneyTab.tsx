@@ -121,8 +121,8 @@ function Trials() {
     <SystemWindow title="MONARCH TRIALS" accent={path?.color ?? "var(--text-dim)"}>
       {!path ? (
         <p className="text-[12px] text-[color:var(--text-mid)] leading-relaxed">
-          Act II begins at the Job Change. Your class determines your Monarch lineage, and the map
-          unlocks its five trials in order as you rise through the ranks.
+          Act II begins at the Job Change (level 40). All nine Monarch pathways will be offered, and
+          your choice is permanent for this hunter. Each unlocks five trials, one per rank band.
         </p>
       ) : (
         <>

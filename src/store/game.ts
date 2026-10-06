@@ -377,6 +377,9 @@ export function normalizeSave(input: unknown): GameState {
   fresh.screen = fresh.name ? "main" : "intro";
   fresh.tab = "quest";
   fresh.notifications = [];
+  // Transient UI flags must never survive a reload (these are on the FxState slice,
+  // not GameState; they are reset in importState/hardReset/onRehydrate).
+  fresh.rewardChoicePending = false;
   return fresh;
 }
 
@@ -1078,10 +1081,20 @@ export const useGame = create<Store>()(
         if (state) {
           // returning player with a saved name skips to main
           state.screen = state.name ? "main" : "intro";
+          state.tab = "quest";
+          state.notifications = [];
+          state.rewardChoicePending = false;
+          state.levelUpFx = false;
+          state.rankUpFx = null;
+          state.gateClearFx = null;
+          state.ascensionFx = false;
+          state.deathConfirm = false;
           // Re-show a pending death after reload without replaying its effects.
           if (state.hp <= 0 && state.name) {
             state.dead = true;
-            state.deathConfirm = false;
+          } else {
+            state.dead = false;
+            state.deathCause = "";
           }
         }
       },
