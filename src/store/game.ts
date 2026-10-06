@@ -25,6 +25,7 @@ import {
 } from "../data";
 import { getPath, MONARCH_PATHS, PATH_FLOURISH_IDS, PATH_TIERS } from "../data/monarchPaths";
 import { fatigueEarned, goldEarned, isPathTitleValid, mondayKey, pathBonuses, shopCost } from "../lib/monarch";
+import { findMove, moveUnlockReason, pathMoves, spendMovePoints } from "../lib/moves";
 import {
   PENALTY_MS,
   SAVE_KEY,
@@ -40,6 +41,7 @@ interface FxState {
   levelUpFx: boolean;
   rankUpFx: string | null;
   gateClearFx: { path: PathId; tier: TierNumber } | null;
+  ascensionFx: boolean;
   dead: boolean;
   deathCause: string;
   deathConfirm: boolean;
@@ -51,6 +53,8 @@ interface Actions {
   chooseMonarchPath: (path: PathId) => void;
   completeGate: (tier: TierNumber) => boolean;
   useSignatureMove: () => void;
+  /** Spends stat points to learn one drafted Gate move. Never auto-grants. */
+  learnMove: (id: string) => void;
   setTab: (t: Tab) => void;
   setAvatar: (a: string) => void;
   // quest
@@ -97,6 +101,7 @@ interface Actions {
   clearLevelUpFx: () => void;
   clearRankUpFx: () => void;
   clearGateFx: () => void;
+  clearAscensionFx: () => void;
   // system
   tick: () => void;
   importState: (data: unknown) => void;
@@ -164,6 +169,9 @@ function defaultState(): GameState {
     equippedFlourishId: null,
     monarchPath: null,
     clearedGates: [],
+    gateClears: [],
+    learnedMoves: [],
+    ascended: false,
     shieldCharges: 0,
     shieldWeek: "",
     signatureUsedDate: "",
@@ -243,9 +251,28 @@ export function normalizeSave(input: unknown): GameState {
     && fresh.inventory.includes(saved.equippedFlourishId)
     && getItem(saved.equippedFlourishId)?.pathFlourish === fresh.monarchPath
     ? saved.equippedFlourishId : null;
+  fresh.gateClears = Array.isArray(saved.gateClears)
+    ? fresh.clearedGates.map((tier) => {
+        const entry = (saved.gateClears as unknown[]).find(
+          (row): row is { tier: TierNumber; date: string } =>
+            !!row && typeof row === "object" && (row as { tier?: unknown }).tier === tier
+            && typeof (row as { date?: unknown }).date === "string");
+        return { tier, date: entry?.date ?? "" };
+      })
+    : fresh.clearedGates.map((tier) => ({ tier, date: "" }));
+  // Move ids are path-scoped, so a stale id from another lineage can never return.
+  const ownMoveIds = pathMoves(getPath(fresh.monarchPath)).filter((move) => move.role !== "basic").map((move) => move.id);
+  fresh.learnedMoves = Array.isArray(saved.learnedMoves)
+    ? [...new Set(saved.learnedMoves.filter((id): id is string => typeof id === "string" && ownMoveIds.includes(id)))]
+    : [];
+  const ultimateId = getPath(fresh.monarchPath)?.moves[4].id;
+  fresh.ascended = saved.ascended === true && !!ultimateId && fresh.learnedMoves.includes(ultimateId);
   if (!fresh.monarchPath || fresh.level < 40) {
     fresh.monarchPath = null;
     fresh.clearedGates = [];
+    fresh.gateClears = [];
+    fresh.learnedMoves = [];
+    fresh.ascended = false;
     fresh.equippedFlourishId = null;
   }
   fresh.inventory = [...new Set([
@@ -288,11 +315,16 @@ export function normalizeSave(input: unknown): GameState {
   fresh.mpMax = maxima.mpMax;
   fresh.hp = Math.min(fresh.hp, fresh.hpMax);
   fresh.mp = Math.min(fresh.mp, fresh.mpMax);
-  fresh.equippedTitle =
-    (typeof saved.equippedTitle === "number" && TITLES.some((title) => title.id === saved.equippedTitle
-      && (title.level == null || fresh.level >= title.level) && (title.streak == null || fresh.streak >= title.streak)))
-    || (typeof saved.equippedTitle === "string" && isPathTitleValid(fresh, saved.equippedTitle))
-      ? saved.equippedTitle as number | string : 0;
+  // An expired or forged title clears to none, never silently to the starter
+  // title. Only a save that never carried the field keeps the starting title.
+  const numericTitleValid = typeof saved.equippedTitle === "number"
+    && TITLES.some((title) => title.id === saved.equippedTitle
+      && (title.level == null || fresh.level >= title.level)
+      && (title.streak == null || fresh.streak >= title.streak));
+  const pathTitleValid = typeof saved.equippedTitle === "string" && isPathTitleValid(fresh, saved.equippedTitle);
+  fresh.equippedTitle = numericTitleValid || pathTitleValid
+    ? saved.equippedTitle as number | string
+    : typeof saved.equippedTitle === "undefined" ? 0 : null;
   fresh.shieldWeek = typeof saved.shieldWeek === "string" ? saved.shieldWeek : "";
   fresh.shieldCharges = Math.min(fresh.shieldCharges, pathBonuses(fresh).shieldMax);
   fresh.dayMode = ["classic", "recovery", "overdrive"].includes(fresh.dayMode)
@@ -365,6 +397,7 @@ export const useGame = create<Store>()(
         levelUpFx: false,
         rankUpFx: null,
         gateClearFx: null,
+        ascensionFx: false,
         dead: false,
         deathCause: "",
         deathConfirm: false,
@@ -401,6 +434,7 @@ export const useGame = create<Store>()(
             equippedFlourishId: s.inventory.includes(sigil) ? sigil : null,
             levelUpFx: false,
             rankUpFx: null,
+            ascensionFx: false,
           });
           audio.rankUp();
           get().notify({ title: "Job Change Complete", message: `<b>${path.name}</b> · ${path.jobClass}<br/>Your path is permanent. Its first Gate is ready when you are.`, type: "System" });
@@ -413,10 +447,14 @@ export const useGame = create<Store>()(
            if (!path || !band || s.level < band.min || s.clearedGates.includes(tier) || s.dead || s.inLockdown) return false;
            const rewardMessage = grantLoot(s);
            const newlyCleared = [...s.clearedGates, tier].sort((a, b) => a - b);
+           const gateClears = [...s.gateClears.filter((entry) => entry.tier !== tier), { tier, date: todayISO() }]
+             .sort((a, b) => a.tier - b.tier);
+           const unlockedMove = path.moves[tier - 1];
            const maxBefore = pathBonuses(s).shieldMax;
            const maxAfter = pathBonuses({ monarchPath: s.monarchPath, clearedGates: newlyCleared }).shieldMax;
            set({
              clearedGates: newlyCleared,
+             gateClears,
              ...rewardMessage.patch,
              shieldCharges: Math.min(maxAfter, s.shieldCharges + (maxAfter - maxBefore)),
              shieldWeek: maxAfter > 0 ? mondayKey() : s.shieldWeek,
@@ -425,11 +463,45 @@ export const useGame = create<Store>()(
            audio.rankUp();
             get().notify({
               title: `${band.name} Gate Cleared`,
-              message: `<b>${path.tiers[tier - 1].gateName}</b> conquered in battle.<br/>Title unlocked: <b>Cleared: ${path.tiers[tier - 1].gateName}</b><br/>${rewardMessage.message}`,
+              message: `<b>${path.tiers[tier - 1].gateName}</b> conquered in battle.<br/>Title unlocked: <b>Cleared: ${path.tiers[tier - 1].gateName}</b><br/>Move unlocked: <b>${unlockedMove.name}</b> — learn it for ${unlockedMove.cost} stat points in the PATH tab.<br/>${rewardMessage.message}`,
               type: "System",
             });
            return true;
          },
+
+        learnMove: (id) => {
+          const s = get();
+          if (s.dead || s.inLockdown) return;
+          const path = getPath(s.monarchPath);
+          const move = findMove(path, id);
+          if (!move) return;
+          const reason = moveUnlockReason(s, move);
+          if (reason) {
+            get().notify({ title: "Move Locked", message: reason, type: "Alert" });
+            return;
+          }
+          const spend = spendMovePoints(s, id);
+          if (!spend) return;
+          set({ learnedMoves: spend.learnedMoves, pts: spend.pts });
+          // Learning the Tier-5 move is the ascension: the job class is replaced
+          // by the Monarch title everywhere from that moment on.
+          if (spend.isUltimate && !s.ascended && path) {
+            set({ ascended: true, ascensionFx: true });
+            audio.rankUp();
+            get().notify({
+              title: "Ascension",
+              message: `You are no longer <b>${path.jobClass}</b>.<br/>Rise, <b>${path.monarchTitle}</b>.`,
+              type: "System",
+            });
+            return;
+          }
+          audio.chime();
+          get().notify({
+            title: "Move Learned",
+            message: `<b>${move.name}</b> learned for ${move.cost} stat points.`,
+            type: "System",
+          });
+        },
 
         useSignatureMove: () => {
           const s = get();
@@ -764,6 +836,7 @@ export const useGame = create<Store>()(
             levelUpFx: false,
             rankUpFx: null,
             gateClearFx: null,
+            ascensionFx: false,
             dead: false,
             deathConfirm: false,
             deathCause: "",
@@ -871,12 +944,13 @@ export const useGame = create<Store>()(
         clearLevelUpFx: () => set({ levelUpFx: false }),
         clearRankUpFx: () => set({ rankUpFx: null }),
         clearGateFx: () => set({ gateClearFx: null }),
+        clearAscensionFx: () => set({ ascensionFx: false }),
 
         importState: (data) => {
           if (!isSaveFile(data)) throw new Error("This file does not contain a valid hunter save.");
           const normalized = normalizeSave(data);
           set({ ...normalized, dead: normalized.hp <= 0 && !!normalized.name,
-            levelUpFx: false, rankUpFx: null, gateClearFx: null, deathCause: "", deathConfirm: false });
+            levelUpFx: false, rankUpFx: null, gateClearFx: null, ascensionFx: false, deathCause: "", deathConfirm: false });
         },
 
         hardReset: () => {
@@ -884,7 +958,7 @@ export const useGame = create<Store>()(
           const fresh = defaultState();
           fresh.settings = settings;
           fresh.pactLedger = get().pactLedger;
-          set({ ...fresh, levelUpFx: false, rankUpFx: null, gateClearFx: null, dead: false });
+          set({ ...fresh, levelUpFx: false, rankUpFx: null, gateClearFx: null, ascensionFx: false, dead: false });
         },
 
         tick: () => runTick(set, get),
