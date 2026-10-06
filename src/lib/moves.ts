@@ -1,5 +1,5 @@
 import { getPath, PATH_TIERS } from "../data/monarchPaths";
-import type { GameState, MonarchPath, MoveRole, PathMove } from "../types";
+import type { GameState, MonarchPath, MoveLike, MoveRole, PathMove } from "../types";
 
 /**
  * Gate battles use a drafted moveset instead of the old single signature move.
@@ -24,6 +24,8 @@ export const MOVE_ROLE_COLOR: Record<MoveRole, string> = {
   weaken: "#9b59f7",
   empower: "#ffaa00",
   drain: "#1e9bff",
+  heal: "#2fe08a",
+  finisher: "#ff8a5b",
   ultimate: "#cc1a30",
 };
 
@@ -33,6 +35,8 @@ export const MOVE_ROLE_LABEL: Record<MoveRole, string> = {
   weaken: "WEAKEN",
   empower: "EMPOWER",
   drain: "DRAIN",
+  heal: "HEAL",
+  finisher: "FINISHER",
   ultimate: "ULTIMATE",
 };
 
@@ -96,14 +100,18 @@ export function spendMovePoints(
   };
 }
 
-/** One-line mechanical summary, shared by the Path tab and the battle move grid. */
-export function moveEffect(move: PathMove): string {
+/** One-line mechanical summary, shared by both skill trees and the battle grid. */
+export function moveEffect(move: MoveLike): string {
   const parts: string[] = [];
+  const scale = move.scale ?? (move.role === "empower" ? 0.25 : 0.2);
+  const percent = Math.round(scale * 100);
   if (move.power > 0) parts.push(`${move.power.toFixed(1)}x ATK`);
-  if (move.debuff === "atk") parts.push("BOSS ATK -20%");
-  if (move.debuff === "def") parts.push("BOSS DEF -20%");
-  if (move.buff) parts.push(`${move.buff === "crit" ? "YOUR CRIT" : `YOUR ${move.buff.toUpperCase()}`} +25%`);
+  if (move.debuff === "atk") parts.push(`ENEMY ATK -${percent}%`);
+  if (move.debuff === "def") parts.push(`ENEMY DEF -${percent}%`);
+  if (move.buff) parts.push(`${move.buff === "crit" ? "YOUR CRIT" : `YOUR ${move.buff.toUpperCase()}`} +${percent}%`);
   if (move.drain) parts.push(`HEAL ${Math.round(move.drain * 100)}% OF DAMAGE`);
+  if (move.heal) parts.push(`HEAL ${Math.round(move.heal * 100)}% MAX HP`);
+  if (move.once) parts.push("ONCE PER FIGHT");
   return parts.join(" · ") || "No direct damage";
 }
 
@@ -137,12 +145,12 @@ export const NO_MODIFIERS: MoveModifiers = {
 export const WEAKEN_SCALE = 0.2;
 export const EMPOWER_SCALE = 0.25;
 
-export function applyMove(mods: MoveModifiers, move: PathMove): MoveModifiers {
+export function applyMove(mods: MoveModifiers, move: MoveLike): MoveModifiers {
   const next = { ...mods };
-  if (move.debuff === "atk") next.bossAtk -= WEAKEN_SCALE;
-  if (move.debuff === "def") next.bossDef -= WEAKEN_SCALE;
-  if (move.buff === "atk") next.playerAtk += EMPOWER_SCALE;
-  if (move.buff === "def") next.playerDef += EMPOWER_SCALE;
-  if (move.buff === "crit") next.playerCrit += EMPOWER_SCALE;
+  if (move.debuff === "atk") next.bossAtk -= move.scale ?? WEAKEN_SCALE;
+  if (move.debuff === "def") next.bossDef -= move.scale ?? WEAKEN_SCALE;
+  if (move.buff === "atk") next.playerAtk += move.scale ?? EMPOWER_SCALE;
+  if (move.buff === "def") next.playerDef += move.scale ?? EMPOWER_SCALE;
+  if (move.buff === "crit") next.playerCrit += move.scale ?? EMPOWER_SCALE;
   return next;
 }

@@ -1,5 +1,5 @@
 export type Screen = "loading" | "intro" | "awaken" | "main";
-export type Tab = "quest" | "path" | "titles" | "pact" | "log";
+export type Tab = "quest" | "game" | "path" | "titles" | "pact" | "log";
 export type ThemeId = "system-blue" | "penalty-red" | "shadow-purple" | "monarch-gold";
 export type ArchetypeId = "balanced" | "assassin" | "monarch" | "vanguard";
 export type ExerciseKey = "push" | "sit" | "squat" | "run";
@@ -22,31 +22,98 @@ export interface PathTier {
   skills: PathSkill[];
 }
 
-/* ── Gate battle movesets [Pokémon-style drafting] ──
-   Every path's five moves fill the same five mechanical roles, so only the
-   names change per path and the underlying math stays balanceable. */
-export type MoveRole = "basic" | "opener" | "weaken" | "empower" | "drain" | "ultimate";
+/* ── Battle moves ──
+   Gate movesets and the pre-Job Change class kit share one shape so a single
+   battle engine can run both. Every path's five moves fill the same five
+   mechanical roles, and every class's kit fills the same role spread, so only
+   the names and art change between them. */
+export type MoveRole =
+  | "basic" | "opener" | "weaken" | "empower" | "drain" | "heal" | "finisher" | "ultimate";
 
-export interface PathMove {
+/** The mechanical half of a move: everything the battle engine reads. */
+export interface MoveLike {
   id: string;
-  /** Mirrors the trial tier whose Gate unlocks learning it. */
-  tier: TierNumber;
-  role: MoveRole;
   name: string;
+  role: MoveRole;
   /** Multiplier applied to your own ATK (0 = no direct damage). */
   power: number;
+  /** Applied to the enemy for the rest of the fight. */
+  debuff?: "atk" | "def";
+  /** Applied to you for the rest of the fight. */
+  buff?: "atk" | "def" | "crit";
+  /** Fraction of damage dealt that heals you. */
+  drain?: number;
+  /** Fraction of your maximum HP restored outright. */
+  heal?: number;
+  /** Usable once per fight. */
+  once?: boolean;
+  /** Size of the buff or debuff; path moves default to the role's scale. */
+  scale?: number;
+}
+
+export interface PathMove extends MoveLike {
+  /** Mirrors the trial tier whose Gate unlocks learning it. */
+  tier: TierNumber;
   /** Stat points spent to learn it. */
   cost: number;
   /** Gate that must be cleared first; null for the free starting move. */
   requiresTrial: TierNumber | null;
   /** Extra threshold for the Tier-5 ultimate. */
   requiresStat?: { stat: StatKey; amount: number };
-  /** Applied to the boss for the rest of the fight. */
-  debuff?: "atk" | "def";
-  /** Applied to you for the rest of the fight. */
-  buff?: "atk" | "def" | "crit";
-  /** Fraction of damage dealt that heals you. */
-  drain?: number;
+}
+
+/* ── The story game ── */
+export type GameClassId = "fighter" | "mage" | "assassin" | "ranger";
+
+export interface BasicSkill extends MoveLike {
+  /** Hunter level that unlocks the node. */
+  level: number;
+  /** Stat points spent to learn it. */
+  cost: number;
+  /** One-line flavour for the tree node. */
+  desc: string;
+  /** Free starting skill, granted the moment the class is chosen. */
+  starter?: boolean;
+}
+
+export interface HunterClass {
+  id: GameClassId;
+  name: string;
+  icon: string;
+  color: string;
+  role: string;
+  flavor: string;
+  /** The two stats this class leans on, for the tree's tooltip. */
+  stats: [StatKey, StatKey];
+  skills: readonly BasicSkill[];
+}
+
+export type EpisodeKind = "field" | "story" | "boss" | "job";
+
+export interface StoryEpisode {
+  /** The hunter level that unlocks this tile. */
+  level: number;
+  kind: EpisodeKind;
+  region: string;
+  title: string;
+  enemy: string;
+  /** Portrait art for named enemies; composed fights fall back to a silhouette. */
+  enemyArt?: string;
+  npc?: string;
+  /** The System's quest text. */
+  briefing: string;
+  /** What the encounter is, in prose. */
+  prose: string;
+  /** Stat points consumed to attempt it. */
+  cost: number;
+  /** Multiplies the level-derived enemy stat line. */
+  hpScale: number;
+  atkScale: number;
+  defScale: number;
+  /** Grants a free skill from the class tree when cleared, if one is unlearned. */
+  grantsSkill?: boolean;
+  gold: number;
+  rewardNote: string;
 }
 
 export interface MonarchPath {
@@ -220,6 +287,12 @@ export interface GameState {
   equippedFlourishId: number | null;
 
   // Level 40 Job Change and independent, one-time battle Gates.
+  /** The class picked at Awakening. Drives the basic skill tree and the story. */
+  gameClass: GameClassId | null;
+  /** Class skill ids learned from the tree. */
+  basicSkills: string[];
+  /** Story tiles cleared, by level. */
+  storyCleared: number[];
   monarchPath: PathId | null;
   clearedGates: TierNumber[];
   /** Local record of when each trial was cleared, for the Gate Log. */
