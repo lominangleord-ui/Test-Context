@@ -11,6 +11,7 @@ import type {
   PenaltyTargets,
   PathId,
   TierNumber,
+  GameClassId,
 } from "../types";
 import {
   ARCHETYPES,
@@ -25,7 +26,12 @@ import {
 } from "../data";
 import { getPath, MONARCH_PATHS, PATH_FLOURISH_IDS, PATH_TIERS } from "../data/monarchPaths";
 import { fatigueEarned, goldEarned, isPathTitleValid, mondayKey, pathBonuses, shopCost } from "../lib/monarch";
+const HUNTER_CLASS_IDS: GameClassId[] = ["fighter", "mage", "assassin", "ranger"];
+
 import { findMove, moveUnlockReason, pathMoves, spendMovePoints } from "../lib/moves";
+import { classSkills, defaultClassFor, getClass } from "../data/classes";
+import { getEpisode } from "../data/story";
+import { episodeAvailability, nextSkillReward, skillLockReason, spendSkillPoints } from "../lib/story";
 import {
   PENALTY_MS,
   SAVE_KEY,
@@ -48,8 +54,14 @@ interface FxState {
 }
 
 interface Actions {
-  awaken: (name: string, archetype: ArchetypeId, avatar: string) => void;
+  awaken: (name: string, archetype: ArchetypeId, avatar: string, gameClass?: GameClassId) => void;
   finishAwakening: () => void;
+  /** The Awakening class pick. Grants the class's free starter skill. */
+  chooseGameClass: (id: GameClassId) => void;
+  /** Spends stat points on a node of the basic class tree. */
+  learnBasicSkill: (id: string) => void;
+  /** Spends the tile's points and banks its rewards. Returns false if it was not ready. */
+  clearEpisode: (level: number) => boolean;
   chooseMonarchPath: (path: PathId) => void;
   completeGate: (tier: TierNumber) => boolean;
   useSignatureMove: () => void;
@@ -126,7 +138,7 @@ function defaultState(): GameState {
     archetype: "balanced",
     avatar: "/avatars/hunter-1.jpg",
     level: 1,
-    pts: 0,
+    pts: 3,
     streak: 0,
     hp: hpMax,
     hpMax,
@@ -167,6 +179,9 @@ function defaultState(): GameState {
     notifiedTitles: [0],
     hudTheme: "system-blue",
     equippedFlourishId: null,
+    gameClass: null,
+    basicSkills: [],
+    storyCleared: [],
     monarchPath: null,
     clearedGates: [],
     gateClears: [],
@@ -260,6 +275,23 @@ export function normalizeSave(input: unknown): GameState {
         return { tier, date: entry?.date ?? "" };
       })
     : fresh.clearedGates.map((tier) => ({ tier, date: "" }));
+  // Class kit and story progress. A save from before the class pick falls back to
+  // the class closest to its archetype rather than losing its tree.
+  fresh.gameClass = HUNTER_CLASS_IDS.includes(saved.gameClass as GameClassId)
+    ? saved.gameClass as GameClassId
+    : defaultClassFor(fresh.archetype);
+  const ownedSkills = classSkills(fresh.gameClass).map((skill) => skill.id);
+  fresh.basicSkills = Array.isArray(saved.basicSkills)
+    ? [...new Set(saved.basicSkills.filter((id): id is string => typeof id === "string" && ownedSkills.includes(id)))]
+    : [];
+  const starter = classSkills(fresh.gameClass).find((skill) => skill.starter);
+  if (starter && !fresh.basicSkills.includes(starter.id)) fresh.basicSkills = [starter.id, ...fresh.basicSkills];
+  // Story tiles can only ever describe levels the hunter has actually reached.
+  fresh.storyCleared = Array.isArray(saved.storyCleared)
+    ? [...new Set(saved.storyCleared.filter((value): value is number =>
+        typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= fresh.level && value <= 40))]
+        .sort((a, b) => a - b)
+    : [];
   // Move ids are path-scoped, so a stale id from another lineage can never return.
   const ownMoveIds = pathMoves(getPath(fresh.monarchPath)).filter((move) => move.role !== "basic").map((move) => move.id);
   fresh.learnedMoves = Array.isArray(saved.learnedMoves)
@@ -402,15 +434,82 @@ export const useGame = create<Store>()(
         deathCause: "",
         deathConfirm: false,
 
-        awaken: (name, archetype, avatar) => {
+        awaken: (name, archetype, avatar, gameClass) => {
+          const picked = gameClass ?? defaultClassFor(archetype);
+          const starter = classSkills(picked).find((skill) => skill.starter);
           set({
             name: name.trim() || "Hunter",
             archetype,
+            gameClass: picked,
+            basicSkills: starter ? [starter.id] : [],
             avatar: avatar || "/avatars/hunter-1.jpg",
             screen: "awaken",
             lastReminderCheck: Date.now(),
           });
           audio.unlock();
+        },
+
+        chooseGameClass: (id) => {
+          const s = get();
+          if (s.gameClass || s.dead) return;
+          const starter = classSkills(id).find((skill) => skill.starter);
+          set({ gameClass: id, basicSkills: starter ? [...s.basicSkills, starter.id] : s.basicSkills });
+          audio.chime();
+          get().notify({
+            title: "Hunter Class Registered",
+            message: `<b>${getClass(id)?.name}</b>. Your skill tree is open in the GAME tab.`,
+            type: "System",
+          });
+        },
+
+        learnBasicSkill: (id) => {
+          const s = get();
+          if (s.dead || s.inLockdown) return;
+          const skill = classSkills(s.gameClass).find((entry) => entry.id === id);
+          if (!skill) return;
+          const reason = skillLockReason(s, skill);
+          if (reason) {
+            get().notify({ title: "Skill Locked", message: reason, type: "Alert" });
+            return;
+          }
+          const spend = spendSkillPoints(s, id);
+          if (!spend) return;
+          set({ basicSkills: spend.basicSkills, pts: spend.pts });
+          audio.chime();
+          get().notify({
+            title: "Skill Learned",
+            message: `<b>${skill.name}</b> learned for ${skill.cost} stat points.`,
+            type: "System",
+          });
+        },
+
+        clearEpisode: (level) => {
+          const s = get();
+          if (s.dead || s.inLockdown) return false;
+          const episode = getEpisode(level);
+          if (!episode) return false;
+          const availability = episodeAvailability(s, episode);
+          if (availability.status !== "ready" && availability.status !== "cleared") return false;
+          const alreadyCleared = s.storyCleared.includes(level);
+          if (alreadyCleared) return true;
+
+          // Story beats hand over the next unlearned node of the class tree, so a
+          // hunter who never spends a point still finishes the act with a kit.
+          const reward = episode.grantsSkill ? nextSkillReward(s) : null;
+          set({
+            storyCleared: [...s.storyCleared, level].sort((a, b) => a - b),
+            pts: s.pts - episode.cost,
+            gold: s.gold + episode.gold,
+            basicSkills: reward ? [...s.basicSkills, reward.id] : s.basicSkills,
+          });
+          audio.questComplete();
+          get().notify({
+            title: `${episode.title} — cleared`,
+            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, ${episode.cost} stat point${episode.cost === 1 ? "" : "s"} spent.`
+              + (reward ? `<br/>Skill granted free: <b>${reward.name}</b>.` : ""),
+            type: "System",
+          });
+          return true;
         },
 
         finishAwakening: () => {
@@ -966,7 +1065,7 @@ export const useGame = create<Store>()(
     },
     {
       name: SAVE_KEY,
-      version: 9,
+      version: 10,
       storage: createJSONStorage(() => localStorage),
       migrate: (data) => normalizeSave(data),
       merge: (data, current) => ({ ...current, ...normalizeSave(data) }),
