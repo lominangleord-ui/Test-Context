@@ -4,7 +4,7 @@ This is a static Vite/React app. Deploy the Vite `dist` output on Vercel; no dat
 
 ## Checks
 
-All three commands below were run against this exact revision and passed: the type-check was clean, the regression suite was 33/33, and the production build emitted 441.05 kB (130.46 kB gzip). Device behaviour still has to be checked locally, because there is no browser or phone runner here:
+All three commands below were run against this exact revision and passed: the type-check was clean, the regression suite was 40/40, and the production build succeeded. Device behaviour still has to be checked locally, because there is no browser or phone runner here:
 
 ```sh
 npx tsc --noEmit
@@ -12,7 +12,13 @@ npx tsx --test tests/regression.test.ts
 npm run build
 ```
 
-The regression suite covers all eight rank bands and the contiguity of their boundaries, the equippable title that unlocks at each band, all nine path data sets and their five-move tables (roles, powers, point costs, stat gates and the 3/3/3 primary-stat split), stat-derived combat and fatigue readiness, one-time Gate clears, no XP from Gates or path skills, migrated saves, cosmetics before/after Job Change, Fast Mode persistence, recovery, shields, once-per-day signatures, core quest/death mechanics, pose geometry and reminders.
+The regression suite covers the Act I story map (one deterministic quest per level, distinct enemies, level and point gates, winnable enemies at every tile), all four class kits (grounded numbers, one node per role, and the guarantee that a class owns its whole tree by level 30), all eight rank bands and the contiguity of their boundaries, the equippable title that unlocks at each band, all nine path data sets and their five-move tables (roles, powers, point costs, stat gates and the 3/3/3 primary-stat split), stat-derived combat and fatigue readiness, one-time Gate clears, no XP from Gates or path skills, migrated saves, cosmetics before/after Job Change, Fast Mode persistence, recovery, shields, once-per-day signatures, core quest/death mechanics, pose geometry and reminders.
+
+## The story game
+
+The GAME tab is the Solo Leveling story: a map of four regions, one tile per hunter level from 1 to 40, then the nine Monarch trials as Act II. Each tile is a quest that costs unspent stat points and is fought with the class kit built from the same pool, so points are the game's real currency. The four classes (Fighter, Mage, Assassin, Ranger) each have eight nodes, one node per mechanical role, deliberately capped below the Monarch kit's ceiling; every class can own its entire tree by level 30.
+
+Art in `public/art/` is original generated art for this project: four region maps, five boss portraits, three NPC portraits, the Job Change ceremony, and an item strip. Generated art is committed as source because it ships with the app; `dist/` remains ignored.
 
 ## Manual checks
 
@@ -24,10 +30,14 @@ The regression suite covers all eight rank bands and the contiguity of their bou
 6. Check all nine tier lists render with the specified names and perks. Clear Shadow Extraction, then verify Igris appears only on the Shadow Monarch PATH tab, not as a generic level-1 Shadow roster. Titles from cleared Gates can be equipped and appear in the profile. Other Monarch lineages never see Shadow Extraction.
 7. Clear a path's fatigue, gold or loot perk and compare before/after gains. Test Baran's Stamina Draft discount (30 to 24 gold), Frost's Recovery Potion clearing an extra 20 fatigue even if HP/MP are full, and Legia's Draft clearing 55 total fatigue. The potion already fully restores HP/MP; this fatigue benefit is the useful interpretation of "heals more." Check the Elixir restores both and clears fatigue. None of these effects increase XP.
 8. Learn a Tier-5 move: it costs 8 points, needs 40 in your path's primary stat, and fires the ascension ceremony ("The Nascent trials end here." / "You are no longer [class]." / "Rise, [Monarch title].") exactly once. After that, the profile, PATH header, battle header and titles all use the Monarch title, while the once-per-day MONARCH'S WILL ability remains available independently. For a shield path, miss exactly one day and confirm one shield charge is spent, preserving streak and HP; test two missing days with Tarnak's two charges after Tier 5. Reopen after Monday to confirm recharge. For a Tier-5 active Signature Move, use it twice on the same day (one reward only) and once the next day. Tarnak's final skill is a second passive shield charge, not a daily button.
-9. Preview a foreign path's Sigil from a pre-40 Loot Box: it should stay cosmetic and inactive. Confirm a path, then buy its 60g Path Sigil or find it in loot. Its flourish should personalize the chosen theme. Apply/remove it freely and switch System Blue, Shadow Purple and Monarch Gold as before. Foreign path Sigils remain collectible teasers, not equippable perks.
+9. Open the GAME tab on a fresh save: pick one of the four classes, then walk the map. Tile 1 must be enterable (the Awakening grants 3 points), every later tile must refuse entry until the hunter's level reaches it, and each cleared tile must hand over a free class skill on a story beat. Check the forecast panel agrees with the fight you actually get. Preview a foreign path's Sigil from a pre-40 Loot Box: it should stay cosmetic and inactive. Confirm a path, then buy its 60g Path Sigil or find it in loot. Its flourish should personalize the chosen theme. Apply/remove it freely and switch System Blue, Shadow Purple and Monarch Gold as before. Foreign path Sigils remain collectible teasers, not equippable perks.
 10. Check the expanded shop: Recovery Potion, Stamina Draft, 90g Elixir, 150g Relapse Token, and 60g post-Job Sigil. Free Gate retries mean there is no Retry Charm. Loot includes 60g or rarer 120g gold, recovery, rare tokens, HUD themes and nine path Sigils, with no equippable XP-boosting gear.
 11. Check a dismissible Special Quest still appears only after the daily clear and has no timer. Completing or dismissing it should not spawn a timed Urgent Gate. It cannot create or complete a Monarch Gate automatically.
 12. On real phones and a desktop, test portrait, landscape and camera permission denial for Daily Quest logging; closing a camera session should release the camera and the inline LOG fallback should work. Gate battles must never request camera permission. Test Fast Mode: the mana canvas, portal/scan animations, shakes, flashes and floating combat text disappear immediately while workout logging, camera counting, Gate combat, reminders and progression remain functional. Turn Fast Mode off and confirm the full presentation returns.
+
+## Act II
+
+Act II is the existing tier Gate system surfaced as trial keys: five per path, unlocked by level (40/55/70/90/120), each cleared in a Gate battle and each paying out a drafted move. The map's trial tiles open the same battle the PATH tab does, so there is one implementation rather than two.
 
 ## Reminder limitations
 
