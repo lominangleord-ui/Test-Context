@@ -19,7 +19,9 @@ import { InventoryModal } from "./components/InventoryModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { AvatarPicker } from "./components/AvatarPicker";
 import { Notifications } from "./components/Notifications";
-import { GateClearFx, LevelUpFx, RankUpFx } from "./components/Fx";
+import { AscensionFx, GateClearFx, LevelUpFx, RankUpFx } from "./components/Fx";
+import { GameTab } from "./components/GameTab";
+import { StoryBattle } from "./components/StoryBattle";
 import { CameraOverlay } from "./components/CameraOverlay";
 import { JobChange } from "./components/JobChange";
 import { PathPreview, PathScreen } from "./components/PathScreen";
@@ -31,6 +33,7 @@ import { REMINDER_POLL_MS } from "./lib/reminderPolicy";
 
 const TABS = [
   { id: "quest", label: "QUEST", icon: "⚔" },
+  { id: "game", label: "GAME", icon: "🗺" },
   { id: "path", label: "PATH", icon: "♛" },
   { id: "titles", label: "TITLES", icon: "◇" },
   { id: "pact", label: "PACT", icon: "🩸" },
@@ -123,6 +126,7 @@ function MainApp() {
         </div>
       )}
 
+      {tab === "game" && <div className="max-w-[860px] mx-auto"><GameTab /></div>}
       {tab === "path" && <div className="max-w-[860px] mx-auto"><PathScreen /></div>}
 
       {tab === "titles" && (
@@ -155,6 +159,7 @@ function GlobalOverlays() {
     screen: state.screen,
     dead: state.dead,
     gateClearFx: state.gateClearFx,
+    ascensionFx: state.ascensionFx,
     jobChange: state.level >= 40 && !state.monarchPath && !state.inLockdown,
     levelUpFx: state.levelUpFx, rankUpFx: state.rankUpFx,
     hasNotification: state.notifications.length > 0,
@@ -163,10 +168,11 @@ function GlobalOverlays() {
   const ui = useUi(useShallow((state) => ({
     camera: state.camExercise !== null,
     gateBattle: state.activeGateBattle !== null,
+    storyBattle: state.activeStoryLevel !== null,
     avatar: state.avatarOpen, inventory: state.inventoryOpen, settings: state.settingsOpen,
   })));
-  const active = s.screen === "main" && (s.dead || s.jobChange || !!s.gateClearFx || s.levelUpFx || !!s.rankUpFx || s.hasNotification || s.hasReward
-    || ui.camera || ui.gateBattle || ui.avatar || ui.inventory || ui.settings);
+  const active = s.screen === "main" && (s.dead || s.jobChange || !!s.gateClearFx || s.ascensionFx || s.levelUpFx || !!s.rankUpFx || s.hasNotification || s.hasReward
+    || ui.camera || ui.gateBattle || ui.storyBattle || ui.avatar || ui.inventory || ui.settings);
 
   useEffect(() => {
     if (!active) return;
@@ -179,8 +185,10 @@ function GlobalOverlays() {
   if (s.dead) return <Death />;
   if (ui.camera) return <CameraOverlay />;
   if (ui.gateBattle) return <GateBattle />;
+  if (ui.storyBattle) return <StoryBattle />;
   if (s.jobChange) return <JobChange />;
   if (s.gateClearFx) return <GateClearFx />;
+  if (s.ascensionFx) return <AscensionFx />;
   if (s.levelUpFx) return <LevelUpFx />;
   if (s.rankUpFx) return <RankUpFx />;
   if (s.hasNotification) return <Notifications />;
@@ -199,9 +207,9 @@ export default function App() {
   const inLockdown = useGame((s) => s.inLockdown);
   const dead = useGame((s) => s.dead);
   const fastMode = useGame((s) => s.settings.fastMode);
-  const gameOverlay = useGame((s) => s.dead || (s.level >= 40 && !s.monarchPath && !s.inLockdown) || !!s.gateClearFx || s.levelUpFx || !!s.rankUpFx
+  const gameOverlay = useGame((s) => s.dead || (s.level >= 40 && !s.monarchPath && !s.inLockdown) || !!s.gateClearFx || s.ascensionFx || s.levelUpFx || !!s.rankUpFx
     || s.notifications.length > 0 || (s.rewardChoicePending && !s.inLockdown));
-  const uiOverlay = useUi((s) => s.camExercise !== null || s.activeGateBattle !== null || s.inventoryOpen || s.settingsOpen || s.avatarOpen);
+  const uiOverlay = useUi((s) => s.camExercise !== null || s.activeGateBattle !== null || s.activeStoryLevel !== null || s.inventoryOpen || s.settingsOpen || s.avatarOpen);
 
   useEffect(() => {
     if (dead || screen === "intro") {

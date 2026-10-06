@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import type { GameClassId } from "../types";
 import { useGame } from "../store/game";
 import { ARCHETYPES, AVATARS } from "../data";
+import { HUNTER_CLASSES } from "../data/classes";
 import type { ArchetypeId } from "../types";
 import { SystemWindow } from "./SystemWindow";
 import { RunicText } from "./common";
@@ -10,6 +12,7 @@ export function Intro() {
   const awaken = useGame((s) => s.awaken);
   const [name, setName] = useState("");
   const [arch, setArch] = useState<ArchetypeId>("balanced");
+  const [gameClass, setGameClass] = useState<GameClassId>("fighter");
   const [avatar, setAvatar] = useState(AVATARS[0].src);
   const [ready, setReady] = useState(false);
 
@@ -96,9 +99,9 @@ export function Intro() {
               className="sl-input mb-4"
             />
 
-            {/* Class */}
+            {/* Specialty: what you train, not what you fight with */}
             <div className="font-sys text-[9.5px] tracking-[0.3em] text-[color:var(--text-dim)] uppercase mb-2">
-              Choose Class
+              Choose Specialty
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {(Object.values(ARCHETYPES) as (typeof ARCHETYPES)[ArchetypeId][]).map((a) => {
@@ -127,12 +130,47 @@ export function Intro() {
                 );
               })}
             </div>
+
+            {/* Hunter class: the kit you fight the story with */}
+            <div className="font-sys text-[9.5px] tracking-[0.3em] text-[color:var(--text-dim)] uppercase mt-4 mb-2">
+              Choose Hunter Class
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {HUNTER_CLASSES.map((entry) => {
+                const on = gameClass === entry.id;
+                return (
+                  <button
+                    key={entry.id}
+                    onClick={() => pick(() => setGameClass(entry.id))}
+                    className="text-left p-2.5 border transition-all flex items-start gap-2.5"
+                    style={{
+                      borderColor: on ? entry.color : "#ffffff12",
+                      background: on ? `${entry.color}14` : "#04101d66",
+                      boxShadow: on ? `0 0 18px ${entry.color}44` : "none",
+                    }}
+                  >
+                    <span className="text-xl leading-none mt-0.5" style={{ color: entry.color }}>{entry.icon}</span>
+                    <div className="min-w-0">
+                      <div className="font-sys text-[12px] font-600 tracking-[0.1em]" style={{ color: on ? entry.color : "var(--text-bright)" }}>
+                        {entry.name}
+                      </div>
+                      <div className="text-[10px] text-[color:var(--text)] leading-snug mt-0.5">
+                        {entry.role} · leans {entry.stats.map((stat) => stat.toUpperCase()).join(" / ")}. Eight-skill tree, all of it by level 30.
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="font-mono text-[9px] text-[color:var(--text-dim)] mt-2">
+              YOUR SPECIALTY SETS DAILY TARGETS. YOUR CLASS SETS THE SKILL TREE YOU FIGHT WITH.
+            </p>
           </SystemWindow>
         )}
 
         {ready && (
           <button
-            onClick={() => name.trim() && awaken(name, arch, avatar)}
+            onClick={() => name.trim() && awaken(name, arch, avatar, gameClass)}
             disabled={!name.trim()}
             className="sl-btn sl-btn-solid w-full py-4 text-lg font-head tracking-[0.5em]"
           >

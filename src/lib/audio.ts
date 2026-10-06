@@ -87,6 +87,61 @@ export const audio = {
   error() {
     tone(180, 0, 0.2, "sawtooth", 0.14);
   },
+  /* ── Gate battle move sounds [Pokémon-style moveset] ── */
+  hitThud() {
+    tone(110, 0, 0.16, "sine", 0.22);
+    tone(55, 0, 0.22, "sine", 0.18);
+    tone(220, 0, 0.06, "square", 0.06);
+  },
+  weakenBlip() {
+    [660, 520, 392].forEach((f, i) => tone(f, i * 0.06, 0.12, "triangle", 0.13));
+  },
+  empowerRise() {
+    [523, 699, 880, 1046].forEach((f, i) => tone(f, i * 0.07, 0.2, "sine", 0.13));
+  },
+  drainWhoosh() {
+    const c = ac();
+    tone(300, 0, 0.3, "sine", 0.08);
+    tone(440, 0.14, 0.34, "triangle", 0.11);
+    if (!c) return;
+    const t0 = c.currentTime;
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(180, t0);
+    osc.frequency.exponentialRampToValueAtTime(70, t0 + 0.32);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+    osc.connect(g).connect(c.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.4);
+  },
+  ultimateImpact() {
+    [330, 220, 110].forEach((f, i) => tone(f, i * 0.05, 0.42, "sawtooth", 0.16));
+    tone(55, 0, 0.9, "sine", 0.26);
+    tone(880, 0, 0.1, "square", 0.08);
+  },
+  telegraph() {
+    const c = ac();
+    if (!c) return;
+    const t0 = c.currentTime;
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(120, t0);
+    osc.frequency.exponentialRampToValueAtTime(430, t0 + 0.8);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.1, t0 + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.85);
+    osc.connect(g).connect(c.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.9);
+  },
+  hardenClink() {
+    tone(1250, 0, 0.05, "square", 0.1);
+    tone(1860, 0.04, 0.09, "square", 0.08);
+  },
 };
 
 // ---------- Continuous lockdown drone ----------
