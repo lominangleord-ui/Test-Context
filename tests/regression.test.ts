@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { ARCHETYPES, ITEMS, SHOP_ITEMS, computeTargets, computePenaltyTargets, rankFromLevel, rollLoot, POSE_THRESHOLDS, SQUAT_FALLBACK } from "../src/data.ts";
+import { ARCHETYPES, ITEMS, RANKS, SHOP_ITEMS, TITLES, computeTargets, computePenaltyTargets, rankFromLevel, rollLoot, POSE_THRESHOLDS, SQUAT_FALLBACK } from "../src/data.ts";
 import { GATE_BOSS_STATS, MONARCH_PATHS, PATH_TIERS, PATH_FLOURISH_IDS, gateTitleId, getTier } from "../src/data/monarchPaths.ts";
 import { deriveBattleStats, readinessFromFatigue, rollAttackDamage, signatureDamage } from "../src/lib/battle.ts";
 import { fatigueEarned, goldEarned, mondayKey, pathBonuses, shopCost } from "../src/lib/monarch.ts";
@@ -29,7 +29,7 @@ function fresh(overrides: Partial<GameState> = {}) {
 function reset(overrides: Partial<GameState> = {}) {
   const data = fresh(overrides);
   data.settings = { ...data.settings, screenShake: false, floatingNumbers: false };
-  useGame.setState({ ...data, dead: false, levelUpFx: false, rankUpFx: null, deathCause: "", deathConfirm: false });
+  useGame.setState({ ...data, dead: false, levelUpFx: false, rankUpFx: null, ascensionFx: false, deathCause: "", deathConfirm: false });
 }
 beforeEach(() => reset());
 
@@ -285,31 +285,67 @@ test("Six-hour reminders suppress completed, dead, penalized and locked hunters"
   for (const flag of ["dailyCompleted", "dead", "inLockdown", "penalty"] as const) assert.equal(isReminderDue({ ...state, [flag]: true }, now), false);
 });
 
-test("Lore rank curve keeps Job Change at B and separates National and Monarch tiers", () => {
-  assert.deepEqual([1, 10, 11, 25, 26, 39, 40, 50, 51, 75, 76, 99, 100, 120, 121, 1000].map((level) => rankFromLevel(level).id),
+test("Rank curve gives every band its own boundary and keeps Job Change at B-Rank", () => {
+  assert.deepEqual([1, 9, 10, 24, 25, 39, 40, 54, 55, 74, 75, 99, 100, 119, 120, 1000].map((level) => rankFromLevel(level).id),
     ["E", "E", "D", "D", "C", "C", "B", "B", "A", "A", "S", "S", "N", "N", "M", "M"]);
   assert.equal(rankFromLevel(40).name, "B-Rank");
-  assert.equal(rankFromLevel(76).name, "S-Rank");
+  assert.equal(rankFromLevel(75).name, "S-Rank");
   assert.equal(rankFromLevel(100).name, "National-Level");
-  assert.equal(rankFromLevel(121).name, "Monarch / God Level");
+  assert.equal(rankFromLevel(120).name, "Monarch Level");
+  // Each band owns its boundary level, and RANKS splits the curve with no gaps.
+  for (let index = 1; index < RANKS.length; index++) {
+    assert.equal(RANKS[index].min, RANKS[index - 1].max + 1);
+  }
   assert.deepEqual([40, 54, 55, 69, 70, 89, 90, 119, 120, 9999].map(getTier), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+});
+
+test("Every rank is obtainable as a title at its own boundary level", () => {
+  for (const rank of RANKS) {
+    const title = TITLES.find((candidate) => candidate.level === rank.min && candidate.name.startsWith(rank.name));
+    assert.ok(title, `no title unlocks with ${rank.name} at level ${rank.min}`);
+    const hunter = fresh({ level: rank.min, xp: 0 });
+    assert.ok(rankFromLevel(rank.min).id === rank.id);
+    assert.ok(title.level == null || hunter.level >= title.level);
+  }
+  // Monarch is a real level, so its title cannot arrive before the band starts.
+  assert.equal(TITLES.find((title) => title.name === "Monarch Level Hunter")?.level, 120);
 });
 
 test("Nine distinct data-driven paths have five one-time Gates and no XP skills", () => {
   assert.equal(MONARCH_PATHS.length, 9);
   assert.equal(new Set(MONARCH_PATHS.map((path) => path.id)).size, 9);
   assert.deepEqual(PATH_TIERS.map((tier) => tier.multiplier), [1.5, 1.75, 2, 2.5, 3]);
+  const moveIds = new Set<string>();
+  const roleByTier = ["opener", "weaken", "empower", "drain", "ultimate"];
+  const perStat: Record<string, number> = {};
   for (const path of MONARCH_PATHS) {
     assert.equal(path.tiers.length, 5);
     assert.ok(["push", "sit", "squat"].includes(path.signatureExercise));
-    assert.ok(path.battleMove.length > 2);
+    assert.equal(path.moves.length, 5);
+    assert.ok(path.jobClass.length > 2 && path.monarchTitle.length > 2);
+    assert.notEqual(path.jobClass, path.monarchTitle);
+    perStat[path.primaryStat] = (perStat[path.primaryStat] ?? 0) + 1;
+    path.moves.forEach((move, index) => {
+      assert.equal(move.tier, index + 1);
+      assert.equal(move.role, roleByTier[index]);
+      assert.equal(move.requiresTrial, index + 1);
+      assert.ok(move.name.length > 2 && !moveIds.has(move.id));
+      moveIds.add(move.id);
+    });
+    assert.deepEqual(path.moves.map((move) => move.cost), [3, 4, 5, 6, 8]);
+    assert.deepEqual(path.moves.map((move) => move.power), [1.3, 0.8, 0, 1.1, 1.8]);
+    assert.ok(path.moves[1].debuff === "atk" || path.moves[1].debuff === "def");
+    assert.ok(["atk", "def", "crit"].includes(path.moves[2].buff!));
+    assert.equal(path.moves[3].drain, 0.4);
+    assert.deepEqual(path.moves[4].requiresStat, { stat: path.primaryStat, amount: 40 });
     for (const tier of path.tiers) {
       assert.ok(tier.gateName && tier.title);
       assert.ok(tier.skills.length >= 1 && tier.skills.length <= 2);
       assert.ok(tier.skills.every((skill) => !skill.label.toLowerCase().includes("xp")));
     }
   }
-  // Checked via ranks test below
+  assert.deepEqual(perStat, { vit: 3, str: 3, agi: 3 });
+  assert.equal(moveIds.size, MONARCH_PATHS.length * 5);
 });
 
 test("Gate combat is stat-derived, fatigue-sensitive and deterministic at the formula boundary", () => {
@@ -459,4 +495,47 @@ test("Recovery skills, expanded shop, sigils and once-per-day moves have no XP s
   useGame.getState().useSignatureMove();
   assert.equal(useGame.getState().relapseTokens, 1);
   assert.equal(useGame.getState().xp, 0);
+});
+
+test("Gate moves cost points after a clear, are never auto-granted, and the Tier-5 move ascends", () => {
+  // Points alone are not enough: the tier's Gate must be cleared first.
+  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [], str: 40, agi: 40, vit: 45 });
+  useGame.getState().learnMove("shadows:1");
+  assert.deepEqual(useGame.getState().learnedMoves, []);
+  assert.equal(useGame.getState().pts, 40);
+
+  // Clearing a Gate only unlocks the option; learning spends the points.
+  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [1], str: 40, agi: 40, vit: 45 });
+  useGame.getState().learnMove("shadows:1");
+  assert.deepEqual(useGame.getState().learnedMoves, ["shadows:1"]);
+  assert.equal(useGame.getState().pts, 37);
+  useGame.getState().learnMove("shadows:1");
+  assert.equal(useGame.getState().pts, 37, "a learned move charged twice");
+
+  // Moving to another path makes its ids unlearnable and its stale entries droppable.
+  useGame.getState().learnMove("frost:1");
+  assert.deepEqual(useGame.getState().learnedMoves, ["shadows:1"]);
+  const foreign = normalizeSave({ name: "Test Hunter", level: 60, monarchPath: "shadows", learnedMoves: ["shadows:1", "frost:1", "garbage"] });
+  assert.deepEqual(foreign.learnedMoves, ["shadows:1"]);
+
+  // The ultimate needs its Gate, 40 in the path's primary stat and 8 points.
+  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [5], str: 40, agi: 40, vit: 39 });
+  useGame.getState().learnMove("shadows:5");
+  assert.equal(useGame.getState().ascended, false);
+  reset({ level: 120, monarchPath: "shadows", pts: 7, clearedGates: [5], str: 40, agi: 40, vit: 40 });
+  useGame.getState().learnMove("shadows:5");
+  assert.deepEqual(useGame.getState().learnedMoves, []);
+
+  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [5], str: 40, agi: 40, vit: 40 });
+  useGame.getState().learnMove("shadows:5");
+  assert.deepEqual(useGame.getState().learnedMoves, ["shadows:5"]);
+  assert.equal(useGame.getState().pts, 32);
+  assert.equal(useGame.getState().ascended, true);
+  assert.equal(useGame.getState().ascensionFx, true);
+  useGame.getState().clearAscensionFx();
+  assert.equal(useGame.getState().ascensionFx, false);
+
+  // Ascension cannot be forged by a save that never learned the ultimate.
+  const forged = normalizeSave({ name: "Test Hunter", level: 120, monarchPath: "shadows", ascended: true, learnedMoves: ["shadows:1"] });
+  assert.equal(forged.ascended, false);
 });
