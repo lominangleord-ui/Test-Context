@@ -70,6 +70,57 @@ export function rollAttackDamage(
   return { damage: critical ? Math.max(1, Math.round(varied * 1.5)) : varied, critical };
 }
 
+/** A drafted move: power scales your ATK before defence is subtracted. */
+export function moveDamage(
+  power: number,
+  atk: number,
+  def: number,
+  critChance: number,
+  random = Math.random,
+) {
+  if (power <= 0) return { damage: 0, critical: false };
+  const base = Math.max(1, Math.round(atk) - def);
+  const varied = Math.max(1, Math.round(base * (.85 + random() * .3)));
+  const critical = random() * 100 < critChance;
+  const scaled = Math.max(1, Math.round(varied * power));
+  return { damage: critical ? Math.max(1, Math.round(scaled * 1.5)) : scaled, critical };
+}
+
+/** Damage a move dealt, in abstract terms, for the floating combat text. */
 export function signatureDamage(atk: number, def: number) {
   return Math.max(1, atk - def) + Math.round(atk * .4);
+}
+
+/* ── Boss movesets: shared by tier, so only the numbers scale ── */
+export type BossMoveId = "claw" | "wrath" | "harden";
+
+export interface BossMove {
+  id: BossMoveId;
+  name: string;
+  power: number;
+  /** Announces itself one turn before it lands. */
+  telegraph: boolean;
+  description: string;
+}
+
+export const BOSS_MOVES: Record<BossMoveId, BossMove> = {
+  claw: { id: "claw", name: "Claw Swipe", power: 1, telegraph: false, description: "A straightforward strike." },
+  wrath: { id: "wrath", name: "Guardian's Wrath", power: 1.6, telegraph: true, description: "Heavy, and it warns you first." },
+  harden: { id: "harden", name: "Harden", power: 0, telegraph: false, description: "Raises its guard once, below half health." },
+};
+
+/** Harden is a one-off, mid-fight, DEF buff the player has to punch through. */
+export const HARDEN_DEF_BONUS = 0.2;
+
+export function chooseBossMove(
+  hp: number,
+  maxHP: number,
+  used: readonly BossMoveId[],
+  last: BossMoveId | null,
+  random = Math.random,
+): BossMove {
+  if (!used.includes("harden") && hp <= maxHP * 0.5) return BOSS_MOVES.harden;
+  // Never telegraph two turns in a row: the warning must be readable.
+  if (last !== "wrath" && random() < 0.45) return BOSS_MOVES.wrath;
+  return BOSS_MOVES.claw;
 }

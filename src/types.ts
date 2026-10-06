@@ -22,15 +22,47 @@ export interface PathTier {
   skills: PathSkill[];
 }
 
+/* ── Gate battle movesets [Pokémon-style drafting] ──
+   Every path's five moves fill the same five mechanical roles, so only the
+   names change per path and the underlying math stays balanceable. */
+export type MoveRole = "basic" | "opener" | "weaken" | "empower" | "drain" | "ultimate";
+
+export interface PathMove {
+  id: string;
+  /** Mirrors the trial tier whose Gate unlocks learning it. */
+  tier: TierNumber;
+  role: MoveRole;
+  name: string;
+  /** Multiplier applied to your own ATK (0 = no direct damage). */
+  power: number;
+  /** Stat points spent to learn it. */
+  cost: number;
+  /** Gate that must be cleared first; null for the free starting move. */
+  requiresTrial: TierNumber | null;
+  /** Extra threshold for the Tier-5 ultimate. */
+  requiresStat?: { stat: StatKey; amount: number };
+  /** Applied to the boss for the rest of the fight. */
+  debuff?: "atk" | "def";
+  /** Applied to you for the rest of the fight. */
+  buff?: "atk" | "def" | "crit";
+  /** Fraction of damage dealt that heals you. */
+  drain?: number;
+}
+
 export interface MonarchPath {
   id: PathId;
+  /** Full Monarch title. Sigils, loot text and the ascension pay-off read this. */
   name: string;
+  /** The class name shown through Tiers 1–4, before ascension. */
+  monarchTitle: string;
   jobClass: string;
   flavor: string;
   signatureExercise: CameraExercise;
   icon: string;
   color: string;
-  battleMove: string;
+  /** Drives the Tier-5 ultimate's stat requirement, split three paths per stat. */
+  primaryStat: StatKey;
+  moves: readonly [PathMove, PathMove, PathMove, PathMove, PathMove];
   tiers: readonly [PathTier, PathTier, PathTier, PathTier, PathTier];
 }
 
@@ -190,6 +222,12 @@ export interface GameState {
   // Level 40 Job Change and independent, one-time battle Gates.
   monarchPath: PathId | null;
   clearedGates: TierNumber[];
+  /** Local record of when each trial was cleared, for the Gate Log. */
+  gateClears: { tier: TierNumber; date: string }[];
+  /** Move ids learned with stat points. Clearing a Gate only unlocks the option. */
+  learnedMoves: string[];
+  /** True once the Tier-5 ultimate is learned and the ascension has played. */
+  ascended: boolean;
   shieldCharges: number;
   shieldWeek: string;
   signatureUsedDate: string;

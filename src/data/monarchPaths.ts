@@ -28,8 +28,15 @@ export const TIER_TO_KEY: Record<number, keyof typeof GATE_BOSS_STATS> = {
 
 export const MONARCH_PATHS: readonly MonarchPath[] = [
   {
-    id: "shadows", name: "Shadow Monarch", jobClass: "Necromancer", icon: "♛", color: "#a58bff", battleMove: "Army of the Dead",
+    id: "shadows", name: "Shadow Monarch", monarchTitle: "Shadow Monarch", jobClass: "Necromancer", icon: "♛", color: "#a58bff", primaryStat: "vit",
     flavor: "You don't fight alone anymore. Raise an army from every battle you win.", signatureExercise: "squat",
+    moves: [
+      { id: "shadows:1", tier: 1, role: "opener", name: "Army of the Dead", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "shadows:2", tier: 2, role: "weaken", name: "Shadow Exchange", power: 0.8, cost: 4, requiresTrial: 2, debuff: "atk" },
+      { id: "shadows:3", tier: 3, role: "empower", name: "Monarch's Resolve", power: 0, cost: 5, requiresTrial: 3, buff: "atk" },
+      { id: "shadows:4", tier: 4, role: "drain", name: "Soul Drain", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "shadows:5", tier: 5, role: "ultimate", name: "Ruler's Authority", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "vit", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Shadow Extraction", title: "Shadow Initiate", skills: [{ kind: "fatigueResist", amount: 0.08, label: "The dead do not tire: 8% less fatigue" }] },
       { gateName: "Shadow Exchange", title: "Shadow Commander", skills: [{ kind: "goldBonus", amount: 0.06, label: "+6% gold earned" }] },
@@ -39,8 +46,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "destruction", name: "Monarch of Destruction", jobClass: "Dragon Mage", icon: "△", color: "#ff6f66", battleMove: "Scorched Earth",
+    id: "destruction", name: "Monarch of Destruction", monarchTitle: "Monarch of Destruction", jobClass: "Dragon Mage", icon: "△", color: "#ff6f66", primaryStat: "str",
     flavor: "Antares's line. You don't out-train your limits; you incinerate them.", signatureExercise: "push",
+    moves: [
+      { id: "destruction:1", tier: 1, role: "opener", name: "Draconification", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "destruction:2", tier: 2, role: "weaken", name: "Wing Buffet", power: 0.8, cost: 4, requiresTrial: 2, debuff: "def" },
+      { id: "destruction:3", tier: 3, role: "empower", name: "Dragon's Pride", power: 0, cost: 5, requiresTrial: 3, buff: "atk" },
+      { id: "destruction:4", tier: 4, role: "drain", name: "Devouring Flame", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "destruction:5", tier: 5, role: "ultimate", name: "Antares' Reckoning", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "str", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Draconification", title: "Dragonblood", skills: [{ kind: "goldBonus", amount: 0.08, label: "Dragons hoard: +8% gold earned" }] },
       { gateName: "Dragon's Breath", title: "Breathbearer", skills: [{ kind: "lootLuck", amount: 0.06, label: "6% chance of an extra loot roll" }] },
@@ -50,8 +64,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "white-flames", name: "Monarch of White Flames", jobClass: "Pyromancer / Dark Knight", icon: "✧", color: "#ffb180", battleMove: "Cauterize",
+    id: "white-flames", name: "Monarch of White Flames", monarchTitle: "Monarch of White Flames", jobClass: "Pyromancer", icon: "✧", color: "#ffb180", primaryStat: "agi",
     flavor: "Baran's line. Burn through fatigue; forge yourself in black fire.", signatureExercise: "push",
+    moves: [
+      { id: "white-flames:1", tier: 1, role: "opener", name: "Hellfire Summoning", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "white-flames:2", tier: 2, role: "weaken", name: "Black Flame Rite", power: 0.8, cost: 4, requiresTrial: 2, debuff: "atk" },
+      { id: "white-flames:3", tier: 3, role: "empower", name: "Demonic Focus", power: 0, cost: 5, requiresTrial: 3, buff: "crit" },
+      { id: "white-flames:4", tier: 4, role: "drain", name: "Infernal Thirst", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "white-flames:5", tier: 5, role: "ultimate", name: "Baran's Inferno", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "agi", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Hellfire Summoning", title: "Hellfire Adept", skills: [{ kind: "recoveryBoost", mode: "staminaDiscount", amount: 0.2, label: "Stamina Draft costs 20% less gold" }] },
       { gateName: "Black Flame Rite", title: "Black Flame Knight", skills: [{ kind: "goldBonus", amount: 0.06, label: "+6% gold earned" }] },
@@ -61,8 +82,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "fangs", name: "Monarch of Fangs", jobClass: "Berserker / Shaman", icon: "⋇", color: "#dfac7b", battleMove: "Alpha's Howl",
+    id: "fangs", name: "Monarch of Fangs", monarchTitle: "Monarch of Fangs", jobClass: "Berserker", icon: "⋇", color: "#dfac7b", primaryStat: "str",
     flavor: "Rakan's line. Pack instinct; you don't quit on a hunt.", signatureExercise: "squat",
+    moves: [
+      { id: "fangs:1", tier: 1, role: "opener", name: "Beast Call", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "fangs:2", tier: 2, role: "weaken", name: "Bloodfang Rite", power: 0.8, cost: 4, requiresTrial: 2, debuff: "def" },
+      { id: "fangs:3", tier: 3, role: "empower", name: "Pack Instinct", power: 0, cost: 5, requiresTrial: 3, buff: "atk" },
+      { id: "fangs:4", tier: 4, role: "drain", name: "Feral Drain", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "fangs:5", tier: 5, role: "ultimate", name: "Rakan's Hunt", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "str", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Beast Call", title: "Beastcaller", skills: [{ kind: "fatigueResist", amount: 0.1, label: "Pack instinct: 10% less fatigue" }] },
       { gateName: "Bloodfang Rite", title: "Bloodfang", skills: [{ kind: "goldBonus", amount: 0.05, label: "+5% gold earned" }] },
@@ -72,8 +100,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "frost", name: "Monarch of Frost", jobClass: "Cryomancer / Ice Mage", icon: "✳", color: "#8fdfff", battleMove: "Deep Freeze",
+    id: "frost", name: "Monarch of Frost", monarchTitle: "Monarch of Frost", jobClass: "Cryomancer", icon: "✳", color: "#8fdfff", primaryStat: "vit",
     flavor: "Sillad's line. Stillness and control; the body that doesn't break.", signatureExercise: "sit",
+    moves: [
+      { id: "frost:1", tier: 1, role: "opener", name: "Glacial Entombment", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "frost:2", tier: 2, role: "weaken", name: "Frostbite Ward", power: 0.8, cost: 4, requiresTrial: 2, debuff: "atk" },
+      { id: "frost:3", tier: 3, role: "empower", name: "Permafrost Focus", power: 0, cost: 5, requiresTrial: 3, buff: "def" },
+      { id: "frost:4", tier: 4, role: "drain", name: "Winter's Embrace", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "frost:5", tier: 5, role: "ultimate", name: "Sillad's Eternal Winter", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "vit", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Glacial Entombment", title: "Glacial Adept", skills: [{ kind: "recoveryBoost", mode: "potionFatigue", amount: 20, label: "Recovery Potions also clear 20 fatigue" }] },
       { gateName: "Frostbite Ward", title: "Frostwarden", skills: [{ kind: "fatigueResist", amount: 0.06, label: "6% less fatigue" }] },
@@ -83,8 +118,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "iron-body", name: "Monarch of the Iron Body", jobClass: "Tank / Juggernaut", icon: "▣", color: "#ced7e0", battleMove: "Immovable",
+    id: "iron-body", name: "Monarch of the Iron Body", monarchTitle: "Monarch of the Iron Body", jobClass: "Juggernaut", icon: "▣", color: "#ced7e0", primaryStat: "vit",
     flavor: "Tarnak's line. You are the thing that doesn't move.", signatureExercise: "squat",
+    moves: [
+      { id: "iron-body:1", tier: 1, role: "opener", name: "Golem Forge", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "iron-body:2", tier: 2, role: "weaken", name: "Ironclad Rite", power: 0.8, cost: 4, requiresTrial: 2, debuff: "atk" },
+      { id: "iron-body:3", tier: 3, role: "empower", name: "Bulwark Stance", power: 0, cost: 5, requiresTrial: 3, buff: "def" },
+      { id: "iron-body:4", tier: 4, role: "drain", name: "Mountain's Resolve", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "iron-body:5", tier: 5, role: "ultimate", name: "Tarnak's Unbreakable Throne", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "vit", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Golem Forge", title: "Stoneforged", skills: [{ kind: "fatigueResist", amount: 0.1, label: "10% less fatigue" }] },
       { gateName: "Ironclad Rite", title: "Ironclad", skills: [{ kind: "streakShield", charges: 1, label: "One forgiven missed day per week" }] },
@@ -94,8 +136,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "beginning", name: "Monarch of the Beginning", jobClass: "Brute / Brawler", icon: "◆", color: "#c9ae91", battleMove: "Ground Zero",
+    id: "beginning", name: "Monarch of the Beginning", monarchTitle: "Monarch of the Beginning", jobClass: "Brawler", icon: "◆", color: "#c9ae91", primaryStat: "str",
     flavor: "Legia's line. Raw, primal, first-principles strength.", signatureExercise: "push",
+    moves: [
+      { id: "beginning:1", tier: 1, role: "opener", name: "Colossal Growth", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "beginning:2", tier: 2, role: "weaken", name: "Titan's Stride", power: 0.8, cost: 4, requiresTrial: 2, debuff: "def" },
+      { id: "beginning:3", tier: 3, role: "empower", name: "Earthshaker Focus", power: 0, cost: 5, requiresTrial: 3, buff: "atk" },
+      { id: "beginning:4", tier: 4, role: "drain", name: "Giant's Hunger", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "beginning:5", tier: 5, role: "ultimate", name: "Legia's Genesis", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "str", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Colossal Growth", title: "Colossus", skills: [{ kind: "goldBonus", amount: 0.08, label: "+8% gold earned" }] },
       { gateName: "Titan's Stride", title: "Titanwalker", skills: [{ kind: "fatigueResist", amount: 0.06, label: "6% less fatigue" }] },
@@ -105,8 +154,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "plagues", name: "Monarch of Plagues", jobClass: "Summoner / Poison Mage", icon: "☣", color: "#8ed990", battleMove: "Outbreak",
+    id: "plagues", name: "Monarch of Plagues", monarchTitle: "Monarch of Plagues", jobClass: "Poison Mage", icon: "☣", color: "#8ed990", primaryStat: "agi",
     flavor: "Querehsha's line. Patient, relentless, everywhere at once.", signatureExercise: "sit",
+    moves: [
+      { id: "plagues:1", tier: 1, role: "opener", name: "Parasitic Infection", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "plagues:2", tier: 2, role: "weaken", name: "Swarm Communion", power: 0.8, cost: 4, requiresTrial: 2, debuff: "atk" },
+      { id: "plagues:3", tier: 3, role: "empower", name: "Hive Focus", power: 0, cost: 5, requiresTrial: 3, buff: "crit" },
+      { id: "plagues:4", tier: 4, role: "drain", name: "Pestilent Drain", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "plagues:5", tier: 5, role: "ultimate", name: "Querehsha's Plague", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "agi", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Parasitic Infection", title: "Swarmcaller", skills: [{ kind: "lootLuck", amount: 0.08, label: "The swarm finds everything: 8% extra loot chance" }] },
       { gateName: "Swarm Communion", title: "Hivebound", skills: [{ kind: "fatigueResist", amount: 0.06, label: "6% less fatigue" }] },
@@ -116,8 +172,15 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
     ],
   },
   {
-    id: "transfiguration", name: "Monarch of Transfiguration", jobClass: "Sorcerer / Illusionist", icon: "⌬", color: "#d3a1ef", battleMove: "Reshape",
+    id: "transfiguration", name: "Monarch of Transfiguration", monarchTitle: "Monarch of Transfiguration", jobClass: "Illusionist", icon: "⌬", color: "#d3a1ef", primaryStat: "agi",
     flavor: "Yogumunt's line. Nothing about you has to stay what it was.", signatureExercise: "sit",
+    moves: [
+      { id: "transfiguration:1", tier: 1, role: "opener", name: "Spatial Alteration", power: 1.3, cost: 3, requiresTrial: 1 },
+      { id: "transfiguration:2", tier: 2, role: "weaken", name: "Mirror Rite", power: 0.8, cost: 4, requiresTrial: 2, debuff: "def" },
+      { id: "transfiguration:3", tier: 3, role: "empower", name: "Phase Focus", power: 0, cost: 5, requiresTrial: 3, buff: "crit" },
+      { id: "transfiguration:4", tier: 4, role: "drain", name: "Realitybend", power: 1.1, cost: 6, requiresTrial: 4, drain: 0.4 },
+      { id: "transfiguration:5", tier: 5, role: "ultimate", name: "Yogumunt's Infinite Form", power: 1.8, cost: 8, requiresTrial: 5, requiresStat: { stat: "agi", amount: 40 } },
+    ],
     tiers: [
       { gateName: "Spatial Alteration", title: "Spacebender", skills: [{ kind: "streakShield", charges: 1, label: "One forgiven missed day per week" }] },
       { gateName: "Mirror Rite", title: "Mirror Adept", skills: [{ kind: "lootLuck", amount: 0.06, label: "6% chance of an extra loot roll" }] },
