@@ -19,7 +19,7 @@ import { InventoryModal } from "./components/InventoryModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { AvatarPicker } from "./components/AvatarPicker";
 import { Notifications } from "./components/Notifications";
-import { GateClearFx, LevelUpFx, RankUpFx } from "./components/Fx";
+import { AscensionFx, GateClearFx, LevelUpFx, RankUpFx } from "./components/Fx";
 import { CameraOverlay } from "./components/CameraOverlay";
 import { JobChange } from "./components/JobChange";
 import { PathPreview, PathScreen } from "./components/PathScreen";
@@ -155,6 +155,7 @@ function GlobalOverlays() {
     screen: state.screen,
     dead: state.dead,
     gateClearFx: state.gateClearFx,
+    ascensionFx: state.ascensionFx,
     jobChange: state.level >= 40 && !state.monarchPath && !state.inLockdown,
     levelUpFx: state.levelUpFx, rankUpFx: state.rankUpFx,
     hasNotification: state.notifications.length > 0,
@@ -165,7 +166,7 @@ function GlobalOverlays() {
     gateBattle: state.activeGateBattle !== null,
     avatar: state.avatarOpen, inventory: state.inventoryOpen, settings: state.settingsOpen,
   })));
-  const active = s.screen === "main" && (s.dead || s.jobChange || !!s.gateClearFx || s.levelUpFx || !!s.rankUpFx || s.hasNotification || s.hasReward
+  const active = s.screen === "main" && (s.dead || s.jobChange || !!s.gateClearFx || s.ascensionFx || s.levelUpFx || !!s.rankUpFx || s.hasNotification || s.hasReward
     || ui.camera || ui.gateBattle || ui.avatar || ui.inventory || ui.settings);
 
   useEffect(() => {
@@ -181,6 +182,7 @@ function GlobalOverlays() {
   if (ui.gateBattle) return <GateBattle />;
   if (s.jobChange) return <JobChange />;
   if (s.gateClearFx) return <GateClearFx />;
+  if (s.ascensionFx) return <AscensionFx />;
   if (s.levelUpFx) return <LevelUpFx />;
   if (s.rankUpFx) return <RankUpFx />;
   if (s.hasNotification) return <Notifications />;
@@ -199,7 +201,7 @@ export default function App() {
   const inLockdown = useGame((s) => s.inLockdown);
   const dead = useGame((s) => s.dead);
   const fastMode = useGame((s) => s.settings.fastMode);
-  const gameOverlay = useGame((s) => s.dead || (s.level >= 40 && !s.monarchPath && !s.inLockdown) || !!s.gateClearFx || s.levelUpFx || !!s.rankUpFx
+  const gameOverlay = useGame((s) => s.dead || (s.level >= 40 && !s.monarchPath && !s.inLockdown) || !!s.gateClearFx || s.ascensionFx || s.levelUpFx || !!s.rankUpFx
     || s.notifications.length > 0 || (s.rewardChoicePending && !s.inLockdown));
   const uiOverlay = useUi((s) => s.camExercise !== null || s.activeGateBattle !== null || s.inventoryOpen || s.settingsOpen || s.avatarOpen);
 

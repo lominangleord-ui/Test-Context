@@ -2,7 +2,8 @@ import { useShallow } from "zustand/react/shallow";
 import { useGame } from "../store/game";
 import { rankFromLevel, TITLES, ARCHETYPES } from "../data";
 import { getPath, getTier } from "../data/monarchPaths";
-import { pathTitle } from "../lib/monarch";
+import { pathBonuses, pathTitle } from "../lib/monarch";
+import { pathDisplayName } from "../lib/moves";
 import { SystemWindow, DataRow } from "./SystemWindow";
 import { Bar, CountUp } from "./common";
 import { useUi } from "../store/ui";
@@ -77,6 +78,56 @@ function StatCell({
   );
 }
 
+/**
+ * One Gold/Potion/Token/Draft tile. Tiles backed by a real action render as
+ * buttons; the rest stay plain read-outs so nothing looks tappable by accident.
+ */
+function ResourceChip({
+  label,
+  value,
+  color,
+  action,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  action?: { onClick: () => void; enabled: boolean; hint: string; note: string };
+}) {
+  const body = (
+    <>
+      <div className="font-mono text-[15px] leading-none" style={{ color, textShadow: `0 0 10px ${color}` }}>
+        {value}
+      </div>
+      <div className="font-sys text-[8px] tracking-[0.18em] text-[color:var(--text-dim)] mt-1">{label}</div>
+      {action && (
+        <div
+          className="font-sys text-[7px] tracking-[0.16em] mt-0.5"
+          style={{ color: action.enabled ? color : "var(--text-faint)" }}
+        >
+          {action.note}
+        </div>
+      )}
+    </>
+  );
+
+  if (!action) {
+    return <div className="text-center border border-[#ffffff12] bg-[#04101d80] py-1.5">{body}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      className={`resource-chip text-center border border-[#ffffff12] bg-[#04101d80] py-1.5 ${action.enabled ? "ready" : ""}`}
+      onClick={action.onClick}
+      disabled={!action.enabled}
+      title={action.hint}
+      aria-label={action.hint}
+    >
+      {body}
+    </button>
+  );
+}
+
 function hpStatus(hp: number, hpMax: number) {
   const r = hpMax > 0 ? hp / hpMax : 0;
   if (r <= 0) return { t: "CRITICAL", c: "var(--red)" };
@@ -91,9 +142,11 @@ export function ProfileWindow() {
     name: state.name, avatar: state.avatar, level: state.level,
     archetype: state.archetype, equippedTitle: state.equippedTitle,
     monarchPath: state.monarchPath, clearedGates: state.clearedGates,
-    hp: state.hp, hpMax: state.hpMax, streak: state.streak, pact: state.pact,
+    hp: state.hp, hpMax: state.hpMax, mp: state.mp, mpMax: state.mpMax,
+    streak: state.streak, pact: state.pact, fatigueLevel: state.fatigueLevel,
     gold: state.gold, potions: state.potions, relapseTokens: state.relapseTokens,
-    staminaDrafts: state.staminaDrafts,
+    staminaDrafts: state.staminaDrafts, blocked: state.inLockdown || state.dead,
+    consumePotion: state.consumePotion, consumeStamina: state.consumeStamina,
   })));
   const openAvatar = useUi((u) => u.openAvatar);
   const { id: rank, name: rankName, color } = rankFromLevel(s.level);
@@ -106,6 +159,12 @@ export function ProfileWindow() {
       : null;
   const arch = ARCHETYPES[s.archetype];
   const status = hpStatus(s.hp, s.hpMax);
+  const bonuses = pathBonuses(s);
+  // Mirrors the store's own guards, so a tile only lights up when tapping it
+  // would actually spend the item.
+  const potionReady = !s.blocked && s.potions > 0
+    && (s.hp < s.hpMax || s.mp < s.mpMax || (bonuses.potionFatigue > 0 && s.fatigueLevel > 0));
+  const draftReady = !s.blocked && s.staminaDrafts > 0 && s.fatigueLevel > 0;
 
   return (
     <SystemWindow title="HUNTER PROFILE" titleSize="sm">
@@ -144,7 +203,9 @@ export function ProfileWindow() {
           <div className="mt-2 space-y-0">
             <DataRow k="Class" v={<span style={{ color }}>{rankName}</span>} />
             <DataRow k="Archetype" v={`${arch.icon} ${arch.name}`} />
-            {path && <DataRow k="Job" v={<span style={{ color: path.color }}>{path.jobClass} · {path.name}</span>} />}
+            {path && (
+              <DataRow k="Job" v={<span style={{ color: path.color }}>{pathDisplayName(path, s.level)}</span>} />
+            )}
             {path && <DataRow k="Tier" v={`${getTier(s.level)} · ${["", "Nascent", "Ascendant", "Dominion", "Sovereign", "Transcendent"][getTier(s.level)]}`} />}
             <DataRow k="Status" v={<span style={{ color: status.c }}>{status.t}</span>} />
             <DataRow k="Streak" v={`${s.streak} day${s.streak === 1 ? "" : "s"}`} />
@@ -167,23 +228,41 @@ export function ProfileWindow() {
         </div>
       </div>
 
-      {/* Currency strip */}
+      {/* Currency strip — Potion and Draft are usable straight from here. */}
       <div className="grid grid-cols-4 gap-1.5 mt-3">
-        {[
-          { l: "GOLD", v: s.gold, c: "var(--gold)" },
-          { l: "POTION", v: s.potions, c: "var(--green)" },
-          { l: "TOKEN", v: s.relapseTokens, c: "var(--purple)" },
-          { l: "DRAFT", v: s.staminaDrafts, c: "var(--cyan-bright)" },
-        ].map((x) => (
-          <div key={x.l} className="text-center border border-[#ffffff12] bg-[#04101d80] py-1.5">
-            <div className="font-mono text-[15px] leading-none" style={{ color: x.c, textShadow: `0 0 10px ${x.c}` }}>
-              {x.v}
-            </div>
-            <div className="font-sys text-[8px] tracking-[0.18em] text-[color:var(--text-dim)] mt-1">
-              {x.l}
-            </div>
-          </div>
-        ))}
+        <ResourceChip label="GOLD" value={s.gold} color="var(--gold)" />
+        <ResourceChip
+          label="POTION"
+          value={s.potions}
+          color="var(--green)"
+          action={{
+            onClick: s.consumePotion,
+            enabled: potionReady,
+            note: potionReady ? "TAP TO USE" : s.potions > 0 ? "FULL" : "EMPTY",
+            hint: potionReady
+              ? "Use a Recovery Potion: fully restores HP and MP"
+              + (bonuses.potionFatigue > 0 ? ` and clears ${bonuses.potionFatigue} fatigue.` : ".")
+              : s.potions > 0
+                ? "Nothing to restore right now."
+                : "No Recovery Potions held. Buy one from the Inventory.",
+          }}
+        />
+        <ResourceChip label="TOKEN" value={s.relapseTokens} color="var(--purple)" />
+        <ResourceChip
+          label="DRAFT"
+          value={s.staminaDrafts}
+          color="var(--cyan-bright)"
+          action={{
+            onClick: s.consumeStamina,
+            enabled: draftReady,
+            note: draftReady ? "TAP TO USE" : s.staminaDrafts > 0 ? "NO FATIGUE" : "EMPTY",
+            hint: draftReady
+              ? `Use a Stamina Draft: clears ${40 + bonuses.draftPower} fatigue. No XP bonus.`
+              : s.staminaDrafts > 0
+                ? "You have no fatigue to clear."
+                : "No Stamina Drafts held. Buy one from the Inventory.",
+          }}
+        />
       </div>
     </SystemWindow>
   );
