@@ -832,3 +832,228 @@ button.battle-messagebox { font:inherit; cursor:pointer; }
 @media (prefers-reduced-motion:reduce) {
   .story-tile[data-state="current"] { animation:none !important; }
 }
+
+/* ═══════ NES-STYLE PIXEL GRID TILES ═══════ */
+.nes-map { min-height: 240px; }
+.nes-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 3px;
+  padding: 6px;
+  background: #01060c80;
+  border: 1px solid #ffffff12;
+  image-rendering: pixelated;
+}
+@media (min-width: 720px) {
+  .nes-tile-grid { grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 4px; }
+}
+@media (max-width: 480px) {
+  .nes-tile-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+.nes-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 2px 4px;
+  min-height: 52px;
+  font-family: inherit;
+  color: inherit;
+  background: #04101dd9;
+  border: 2px solid #ffffff22;
+  box-shadow:
+    inset 2px 2px 0 #ffffff14,
+    inset -2px -2px 0 #00000055;
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .15s ease, border-color .15s ease;
+  image-rendering: pixelated;
+}
+.nes-tile::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, #ffffff0a 0%, transparent 40%);
+}
+.nes-tile:hover, .nes-tile:focus-visible {
+  border-color: var(--cyan-bright);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 2px 2px 0 #ffffff22,
+    inset -2px -2px 0 #00000055,
+    0 4px 0 #0006,
+    0 0 18px var(--cyan-glow);
+  z-index: 2;
+}
+.nes-tile:active { transform: translateY(0px); }
+.nes-tile[data-selected="true"] {
+  border-color: var(--cyan-bright);
+  background: #072942d9;
+  box-shadow:
+    inset 2px 2px 0 #ffffff28,
+    inset -2px -2px 0 #00000055,
+    0 0 0 1px var(--cyan-bright),
+    0 0 22px var(--cyan-glow);
+}
+.nes-tile-num {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  line-height: 1;
+}
+.nes-tile-glyph {
+  font-size: 15px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.nes-tile-name {
+  font-family: var(--font-sys);
+  font-size: 7px;
+  letter-spacing: .04em;
+  text-align: center;
+  color: var(--text-dim);
+  line-height: 1;
+  display: none;
+}
+.nes-tile.data-cleared {
+  border-color: #2fe08a66;
+  background: #031a12d9;
+}
+.nes-tile.data-cleared .nes-tile-glyph { color: var(--green); }
+.nes-tile.data-current {
+  border-color: var(--cyan-bright);
+  background: #052840e6;
+  animation: nes-blink 1.4s ease-in-out infinite;
+}
+.nes-tile.data-current .nes-tile-glyph {
+  color: var(--cyan-bright);
+  text-shadow: 0 0 10px var(--cyan-bright);
+}
+.nes-tile.data-current .nes-tile-num { color: var(--cyan-bright); }
+.nes-tile.data-open { border-color: #ffffff2e; }
+.nes-tile.data-locked {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: grayscale(.4);
+}
+.nes-tile.data-locked:hover {
+  transform: none;
+  border-color: #ffffff22;
+  box-shadow: inset 2px 2px 0 #ffffff14, inset -2px -2px 0 #00000055;
+}
+@keyframes nes-blink {
+  0%, 100% { box-shadow: inset 2px 2px 0 #ffffff28, inset -2px -2px 0 #00000055, 0 0 12px var(--cyan-glow); }
+  50%      { box-shadow: inset 2px 2px 0 #ffffff3a, inset -2px -2px 0 #00000055, 0 0 28px var(--cyan-bright); }
+}
+
+/* Trial tiles on the NES grid use path color accents */
+.nes-tile.trial-tile {
+  min-height: 64px;
+  padding: 10px 4px 6px;
+  border-color: var(--path-color, var(--cyan));
+}
+.nes-tile.trial-tile .nes-tile-name {
+  display: block;
+  font-size: 7.5px;
+  color: var(--path-color, var(--cyan));
+}
+
+/* ═══════ SKILL TREE OVERLAY ═══════ */
+.skilltree-overlay {
+  background: radial-gradient(ellipse at top, #03101fcc 0%, #00040aee 60%, #000000f5 100%);
+  backdrop-filter: blur(6px);
+}
+
+/* Kit preview chips */
+.kit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  border: 1px solid;
+  border-radius: 2px;
+  transition: background .15s ease;
+}
+
+/* ═══════ JOB CHANGE DESTINY CARD ═══════ */
+.job-destiny-card {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--path-color);
+  background: linear-gradient(135deg, #050d1af2 0%, #03101ff0 100%);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--path-color) 20%, transparent);
+}
+.job-destiny-art {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--path-color);
+  background: #020a14;
+  flex-shrink: 0;
+}
+.job-destiny-emblem {
+  font-size: 44px;
+  text-shadow: 0 0 20px currentColor;
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px currentColor); }
+  50% { filter: drop-shadow(0 0 22px currentColor); }
+}
+.job-destiny-class {
+  font-family: var(--font-sys);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+}
+.job-destiny-name {
+  font-family: var(--font-head);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--text-bright);
+  margin-top: 4px;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--path-color) 50%, transparent);
+}
+.job-destiny-flavor {
+  font-size: 11px;
+  color: var(--text-mid);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.job-mini-paths {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px;
+  border-top: 1px solid #ffffff12;
+  margin-top: 8px;
+}
+.job-mini-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sys);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+/* Top-bar button active state */
+.top-btn.active {
+  color: var(--cyan-bright);
+  background: #072540 !important;
+  border-color: var(--cyan-bright) !important;
+  box-shadow: 0 0 14px var(--cyan-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nes-tile.data-current { animation: none !important; }
+  .job-destiny-emblem { animation: none !important; }
+}

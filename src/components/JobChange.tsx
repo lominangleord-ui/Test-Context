@@ -1,39 +1,41 @@
 import { useEffect, useState } from "react";
-import { MONARCH_PATHS } from "../data/monarchPaths";
+import { MONARCH_PATHS, pathForClass } from "../data/monarchPaths";
+import { getClass } from "../data/classes";
 import { useGame } from "../store/game";
 import { audio } from "../lib/audio";
 import { RunicText } from "./common";
 import { SystemWindow } from "./SystemWindow";
-import type { PathId } from "../types";
 
 export function JobChange() {
   const hunter = useGame((state) => state.name);
+  const gameClass = useGame((state) => state.gameClass);
   const choose = useGame((state) => state.chooseMonarchPath);
   const fastMode = useGame((state) => state.settings.fastMode);
-  const [phase, setPhase] = useState<"boot" | "choose" | "confirm">("boot");
+  const [phase, setPhase] = useState<"boot" | "reveal" | "confirm">("boot");
   const [lines, setLines] = useState<string[]>([]);
-  const [selected, setSelected] = useState<PathId | null>(null);
   const [showRings, setShowRings] = useState(true);
 
+  const cls = getClass(gameClass);
+  const destiny = pathForClass(gameClass);
+
   useEffect(() => {
+    if (!destiny) return;
     const script = [
       "LEVEL THRESHOLD: 40 REACHED",
       `HUNTER RECOGNIZED: ${hunter.toUpperCase()}`,
       "ASSOCIATION CLASSIFICATION: B-RANK",
-      "MONARCH POTENTIAL DETECTED",
-      "JOB CHANGE QUEST: CHOOSE YOUR PATH",
+      "SYSTEM EVALUATION COMPLETE",
+      `YOUR PATH: ${destiny.jobClass.toUpperCase()}`,
     ];
     if (fastMode) {
       setLines(script);
       setShowRings(false);
-      setPhase("choose");
+      setPhase("reveal");
       return;
     }
     let index = 0;
     const timer = window.setInterval(() => {
-      if (index >= script.length) { window.clearInterval(timer); setPhase("choose"); return; }
-      // Read outside the updater: StrictMode may invoke updaters twice, and a
-      // mutation inside one would skip or duplicate ceremony lines.
+      if (index >= script.length) { window.clearInterval(timer); setPhase("reveal"); return; }
       const line = script[index];
       index += 1;
       setLines((current) => (current.includes(line) ? current : [...current, line]));
@@ -42,9 +44,9 @@ export function JobChange() {
     audio.rankUp();
     const rings = window.setTimeout(() => setShowRings(false), 1400);
     return () => { window.clearInterval(timer); window.clearTimeout(rings); };
-  }, [hunter, fastMode]);
+  }, [hunter, fastMode, destiny]);
 
-  const selection = MONARCH_PATHS.find((path) => path.id === selected);
+  if (!destiny || !cls) return null;
   const booting = lines.length < 5;
 
   return (
@@ -62,7 +64,7 @@ export function JobChange() {
         <div className="text-center mb-5">
           <div className="font-kr text-[12px] tracking-[.36em] text-[color:var(--cyan-bright)]">시스템</div>
           <div className="font-wide text-[18px] sm:text-[27px] tracking-[.2em] text-[color:var(--text-bright)] job-heading">JOB CHANGE QUEST</div>
-          <p className="font-mono text-[11px] tracking-[.2em] text-[color:var(--gold)] mt-2">B-RANK (LEVEL 40) · MONARCH PATHWAYS</p>
+          <p className="font-mono text-[11px] tracking-[.2em] text-[color:var(--gold)] mt-2">B-RANK (LEVEL 40) · MONARCH AWAKENING</p>
         </div>
 
         {phase === "boot" ? (
@@ -70,43 +72,64 @@ export function JobChange() {
             <div className="min-h-[190px] flex flex-col justify-center gap-3 font-mono text-[11px] sm:text-[13px] tracking-wider">
               {lines.map((line, i) => <div key={i} className="slide-up"><span className="text-[color:var(--text-dim)]">&gt; </span><RunicText text={line} duration={340} /></div>)}
             </div>
-            <button className="sl-btn w-full mt-3" onClick={() => setPhase("choose")}>
-              {booting ? "SKIP TRANSMISSION" : "CONTINUE TO CLASS SELECTION"}
+            <button className="sl-btn w-full mt-3" onClick={() => setPhase("reveal")}>
+              {booting ? "SKIP TRANSMISSION" : "CONTINUE"}
             </button>
           </SystemWindow>
         ) : (
-          <SystemWindow title={phase === "confirm" ? "CONFIRM JOB CHANGE" : "NINE MONARCH PATHS"}>
+          <SystemWindow title="YOUR DESTINED PATH" accent={destiny.color}>
             <p className="text-[12px] text-[color:var(--text-mid)] mb-4 leading-relaxed text-center">
-              Nine lineages. One life. No path grants extra XP. Every Gate is a player-initiated, untimed battle powered by the stats earned through training.
+              Every choice you've made has led here. The System recognizes the class you forged,
+              and the Monarch lineage that answers to it. The path is sealed once accepted.
             </p>
-            <div className="job-path-grid">
-              {MONARCH_PATHS.map((path) => {
-                const active = path.id === selected;
-                return <button
-                  key={path.id}
-                  className={`job-path ${active ? "selected" : ""}`}
-                  style={{ ["--path-color" as string]: path.color }}
-                  onClick={() => { setSelected(path.id); setPhase("confirm"); }}
-                  aria-pressed={active}
-                >
-                  <span className="job-path-icon" aria-hidden="true">{path.icon}</span>
-                  <span className="min-w-0 block">
-                    <span className="job-path-name">{path.name}</span>
-                    <span className="job-path-class">{path.jobClass}</span>
-                    <span className="job-path-flavor">{path.flavor}</span>
-                  </span>
-                  {active && <span className="job-path-mark" aria-hidden="true">◆</span>}
-                </button>;
-              })}
-            </div>
-            {phase === "confirm" && selection && <div className="job-confirm slide-up">
-              <p className="font-wide text-[11px] tracking-wider" style={{ color: selection.color }}>{selection.name.toUpperCase()} · {selection.jobClass.toUpperCase()}</p>
-              <p className="text-[12px] text-[color:var(--text-mid)] mt-2">This choice is permanent for this hunter. No mid-run respec. You can still browse all nine paths above before confirming.</p>
-              <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                <button className="sl-btn flex-1" onClick={() => { setSelected(null); setPhase("choose"); }}>REVIEW ALL NINE</button>
-                <button className="sl-btn sl-btn-solid flex-1" onClick={() => choose(selection.id)}>CONFIRM {selection.jobClass.toUpperCase()}</button>
+            <div className="job-destiny-card" style={{ ["--path-color" as string]: destiny.color }}>
+              <div className="job-destiny-art">
+                <div className="job-destiny-emblem" style={{ color: destiny.color }}>{destiny.icon}</div>
               </div>
-            </div>}
+              <div className="min-w-0 flex-1">
+                <div className="job-destiny-class" style={{ color: destiny.color }}>
+                  {cls.icon} {cls.name.toUpperCase()} → {destiny.jobClass.toUpperCase()}
+                </div>
+                <div className="job-destiny-name">{destiny.name}</div>
+                <div className="job-destiny-flavor">{destiny.flavor}</div>
+              </div>
+            </div>
+            {phase === "confirm" ? (
+              <div className="slide-up mt-4">
+                <p className="font-mono text-[10px] text-[color:var(--gold)] text-center tracking-wider">
+                  "THE NASCENT TRIALS BEGIN NOW."
+                </p>
+              </div>
+            ) : null}
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <button className="sl-btn flex-1" onClick={() => setPhase(phase === "confirm" ? "reveal" : "reveal")}>
+                {phase === "confirm" ? "CONSIDER AGAIN" : "STUDY YOUR LINEAGE"}
+              </button>
+              <button
+                className="sl-btn sl-btn-solid flex-1"
+                onClick={() => {
+                  if (phase === "reveal") setPhase("confirm");
+                  else choose(destiny.id);
+                }}
+              >
+                {phase === "confirm" ? `RISE, ${destiny.jobClass.toUpperCase()}` : "ACCEPT THE PATH"}
+              </button>
+            </div>
+            {phase === "reveal" && (
+              <div className="mt-4">
+                <p className="font-mono text-[9.5px] text-[color:var(--text-dim)] leading-relaxed">
+                  Four classes harden into four Monarch lineages. Your {cls.name} training determines
+                  yours — there is no picking another. Five trials lie between you and the throne.
+                </p>
+                <div className="job-mini-paths mt-2">
+                  {MONARCH_PATHS.map((path) => (
+                    <div key={path.id} className="job-mini-path" style={{ color: path.color, opacity: path.id === destiny.id ? 1 : 0.45 }}>
+                      <span>{path.icon}</span><span>{path.jobClass}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </SystemWindow>
         )}
       </div>

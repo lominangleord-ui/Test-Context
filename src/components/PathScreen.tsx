@@ -1,5 +1,6 @@
 import { useShallow } from "zustand/react/shallow";
 import { useGame } from "../store/game";
+import { useUi } from "../store/ui";
 import { getPath, getTier, PATH_TIERS } from "../data/monarchPaths";
 import { rankFromLevel } from "../data";
 import { pathBonuses } from "../lib/monarch";
@@ -211,16 +212,17 @@ export function PathScreen() {
 }
 
 export function PathPreview() {
-  const s = useGame(useShallow((state) => ({ monarchPath: state.monarchPath, clearedGates: state.clearedGates, level: state.level, setTab: state.setTab })));
+  const s = useGame(useShallow((state) => ({ monarchPath: state.monarchPath, clearedGates: state.clearedGates, level: state.level })));
+  const toggleSkillTree = useUi((u) => u.toggleSkillTree);
   const path = getPath(s.monarchPath);
   if (!path) return null;
   const next = PATH_TIERS.find((tier) => tier.min <= s.level && !s.clearedGates.includes(tier.number));
-  return <button className="path-preview" style={{ ["--path-color" as string]: path.color }} onClick={() => s.setTab("path")}>
+  return <button className="path-preview" style={{ ["--path-color" as string]: path.color }} onClick={toggleSkillTree}>
     <span className="path-preview-icon" aria-hidden="true">{path.icon}</span>
     <span className="min-w-0 flex-1 text-left">
       <span className="block font-sys text-[12px] text-[color:var(--text-bright)] font-bold">{pathDisplayName(path, s.level)}</span>
-      <span className="block font-mono text-[10px] mt-1" style={{ color: path.color }}>{next ? `GATE READY · ${path.tiers[next.number - 1].gateName}` : "VIEW YOUR MONARCH PATH"}</span>
+      <span className="block font-mono text-[10px] mt-1" style={{ color: path.color }}>{next ? `GATE READY · ${path.tiers[next.number - 1].gateName}` : "OPEN SKILL TREE"}</span>
     </span>
-    <span className="font-mono text-[16px]" style={{ color: path.color }}>↗</span>
+    <span className="font-mono text-[16px]" style={{ color: path.color }}>✦</span>
   </button>;
 }

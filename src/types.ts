@@ -1,5 +1,5 @@
 export type Screen = "loading" | "intro" | "awaken" | "main";
-export type Tab = "quest" | "game" | "path" | "titles" | "pact" | "log";
+export type Tab = "quest" | "journey" | "titles" | "pact" | "log";
 export type ThemeId = "system-blue" | "penalty-red" | "shadow-purple" | "monarch-gold";
 export type ArchetypeId = "balanced" | "assassin" | "monarch" | "vanguard";
 export type ExerciseKey = "push" | "sit" | "squat" | "run";

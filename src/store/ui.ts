@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { CameraExercise, CameraPurpose, TierNumber } from "../types";
-import { getPath, PATH_TIERS } from "../data/monarchPaths";
+import { PATH_TIERS, pathForClass } from "../data/monarchPaths";
 import { getEpisode } from "../data/story";
 import { episodeAvailability } from "../lib/story";
 import { useGame } from "./game";
@@ -10,6 +10,7 @@ interface UiState {
   inventoryOpen: boolean;
   settingsOpen: boolean;
   avatarOpen: boolean;
+  skillTreeOpen: boolean;
   camExercise: CameraExercise | null;
   camPurpose: CameraPurpose;
   activeGateBattle: TierNumber | null;
@@ -17,6 +18,8 @@ interface UiState {
   openInventory: () => void;
   openSettings: () => void;
   openAvatar: () => void;
+  toggleSkillTree: () => void;
+  closeSkillTree: () => void;
   closeAll: () => void;
   openCamera: (ex: CameraExercise, penalty?: boolean, purpose?: CameraPurpose) => void;
   openGateBattle: (tier: TierNumber) => void;
@@ -30,6 +33,7 @@ export const useUi = create<UiState>((set) => ({
   inventoryOpen: false,
   settingsOpen: false,
   avatarOpen: false,
+  skillTreeOpen: false,
   camExercise: null,
   camPurpose: "daily",
   activeGateBattle: null,
@@ -37,8 +41,10 @@ export const useUi = create<UiState>((set) => ({
   openInventory: () => set({ inventoryOpen: true }),
   openSettings: () => set({ settingsOpen: true }),
   openAvatar: () => set({ avatarOpen: true }),
+  toggleSkillTree: () => set((s) => ({ skillTreeOpen: !s.skillTreeOpen })),
+  closeSkillTree: () => set({ skillTreeOpen: false }),
   closeAll: () =>
-    set({ inventoryOpen: false, settingsOpen: false, avatarOpen: false, activeGateBattle: null, activeStoryLevel: null }),
+    set({ inventoryOpen: false, settingsOpen: false, avatarOpen: false, skillTreeOpen: false, activeGateBattle: null, activeStoryLevel: null }),
   openCamera: (ex, penalty = false, purpose = "daily") => {
     audio.unlock();
     if (useGame.getState().settings.voiceCounting) voice.say("Camera verification ready");
@@ -47,7 +53,7 @@ export const useUi = create<UiState>((set) => ({
   },
   openGateBattle: (tier) => {
     const state = useGame.getState();
-    const path = getPath(state.monarchPath);
+    const path = pathForClass(state.gameClass);
     const band = PATH_TIERS[tier - 1];
     if (!path || !band || state.level < band.min || state.dead || state.inLockdown) return;
     audio.unlock();
@@ -60,7 +66,6 @@ export const useUi = create<UiState>((set) => ({
     const episode = getEpisode(level);
     if (!episode || state.dead || state.inLockdown) return;
     const availability = episodeAvailability(state, episode);
-    // Replays are free; a first clear has to be unlocked, affordable and ready.
     if (availability.status !== "ready" && availability.status !== "cleared") return;
     audio.unlock();
     if (state.settings.voiceCounting) voice.say(`${episode.enemy} engaged`);
