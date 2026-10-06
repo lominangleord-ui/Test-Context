@@ -188,21 +188,21 @@ export function getItem(id: number | null): Item | undefined {
   return ITEMS.find((i) => i.id === id);
 }
 
-/** Base and rank titles. Monarch Gate titles are generated from the chosen path. */
+/** Base and rank titles. One title per public rank band, plus streak and flavor rewards. */
 export const TITLES: TitleDef[] = [
   { id: 0, name: "Awakened — World's Weakest Hunter", icon: "🔰", desc: "Every Monarch starts somewhere.", level: 1 },
-  { id: 1, name: "Awakened", icon: "✨", desc: "Begin your journey.", level: 1 },
-  { id: 2, name: "Novice Hunter", icon: "🗡️", desc: "Reach Level 10.", level: 10 },
+  { id: 1, name: "E-Rank Hunter", icon: "✨", desc: "The Association's lowest grade. Reach Level 1.", level: 1 },
+  { id: 2, name: "D-Rank Hunter", icon: "🔰", desc: "Reach Level 10.", level: 10 },
   { id: 3, name: "Iron Will", icon: "🛡️", desc: "Maintain a 3-day streak.", streak: 3 },
-  { id: 4, name: "D-Rank Hunter", icon: "🔰", desc: "Reach Level 11.", level: 11 },
+  { id: 4, name: "C-Rank Hunter", icon: "⚔️", desc: "Reach Level 25.", level: 25 },
   { id: 5, name: "Relentless", icon: "🔥", desc: "Maintain a 14-day streak.", streak: 14 },
-  { id: 6, name: "C-Rank Hunter", icon: "⚔️", desc: "Reach Level 26.", level: 26 },
+  { id: 6, name: "B-Rank Hunter", icon: "◆", desc: "Reach Level 40.", level: 40 },
   { id: 7, name: "Shadow of Discipline", icon: "🌑", desc: "Maintain a 30-day streak.", streak: 30 },
-  { id: 8, name: "B-Rank Hunter", icon: "◆", desc: "Reach Level 40.", level: 40 },
-  { id: 9, name: "A-Rank Hunter", icon: "👑", desc: "Reach Level 51.", level: 51 },
-  { id: 10, name: "S-Rank Hunter", icon: "⚔️", desc: "Reach Level 76.", level: 76 },
-  { id: 11, name: "National-Level Hunter", icon: "🩸", desc: "Reach Level 100.", level: 100 },
-  { id: 12, name: "Monarch Beyond the System", icon: "♛", desc: "Transcend the System at Level 121.", level: 121 },
+  { id: 8, name: "A-Rank Hunter", icon: "👑", desc: "Reach Level 55.", level: 55 },
+  { id: 9, name: "S-Rank Hunter", icon: "⚔️", desc: "Reach Level 75.", level: 75 },
+  { id: 10, name: "National-Level Hunter", icon: "🩸", desc: "Reach Level 100.", level: 100 },
+  { id: 11, name: "Monarch Level Hunter", icon: "♛", desc: "Reach Level 120.", level: 120 },
+  { id: 12, name: "Monarch Beyond the System", icon: "❈", desc: "Push past Monarch Level at 130.", level: 130 },
 ];
 
 /** Special quests — 5 pool [VERIFIED FROM SOURCE A.8] */
@@ -214,16 +214,16 @@ export const SPECIAL_QUESTS: SpecialQuest[] = [
   { id: 5, name: "Vitality Surge: Full Body", desc: "The System rewards initiative.", xp: 350, stat: "vit", statAmt: 1 },
 ];
 
-/** Public Association grades; corrected rank curve matching story progression. */
+/** Public Association grades. Each band owns its own boundary level. */
 export const RANKS = [
-  { id: "E", name: "E-Rank", min: 1, max: 10, color: "#aaaaaa" },
-  { id: "D", name: "D-Rank", min: 11, max: 25, color: "#38d98a" },
-  { id: "C", name: "C-Rank", min: 26, max: 39, color: "#9b59f7" },
-  { id: "B", name: "B-Rank", min: 40, max: 50, color: "#aa44ff" },
-  { id: "A", name: "A-Rank", min: 51, max: 75, color: "#ffaa00" },
-  { id: "S", name: "S-Rank", min: 76, max: 99, color: "#cc1a30" },
-  { id: "N", name: "National-Level", min: 100, max: 120, color: "#ffd700" },
-  { id: "M", name: "Monarch / God Level", min: 121, max: Infinity, color: "#d8b4fe" },
+  { id: "E", name: "E-Rank", min: 1, max: 9, color: "#aaaaaa" },
+  { id: "D", name: "D-Rank", min: 10, max: 24, color: "#38d98a" },
+  { id: "C", name: "C-Rank", min: 25, max: 39, color: "#9b59f7" },
+  { id: "B", name: "B-Rank", min: 40, max: 54, color: "#aa44ff" },
+  { id: "A", name: "A-Rank", min: 55, max: 74, color: "#ffaa00" },
+  { id: "S", name: "S-Rank", min: 75, max: 99, color: "#cc1a30" },
+  { id: "N", name: "National-Level", min: 100, max: 119, color: "#ffd700" },
+  { id: "M", name: "Monarch Level", min: 120, max: Infinity, color: "#d8b4fe" },
 ] as const;
 
 export function rankFromLevel(level: number): { id: string; name: string; color: string } {
