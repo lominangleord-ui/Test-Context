@@ -234,7 +234,10 @@ export function StoryBattle() {
         setPlayerHP(playerHPRef.current);
       }
       if (playerHPRef.current <= 0) {
-        enemyLines.push("DEFEAT. You retreat with nothing lost but the attempt. Try the tile again anytime.");
+        enemyLines.push(
+          "DEFEAT. You retreat with nothing lost but the attempt.",
+          "SYSTEM: It was stronger than you — that is the point. Clear a workout, spend your STAT points, buy a node in the ✦ Skill Tree. Then come back.",
+        );
         setEnding("defeat");
         beginTurn([...lines, ...enemyLines]);
         return;
