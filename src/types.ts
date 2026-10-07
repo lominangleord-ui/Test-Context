@@ -234,6 +234,8 @@ export interface GameState {
   // progression
   level: number;
   pts: number;
+  /** Skill Points: earned from clearing story episodes and Gates, spent only on the skill tree. */
+  sp: number;
   streak: number;
   hp: number;
   hpMax: number;
@@ -297,7 +299,7 @@ export interface GameState {
   clearedGates: TierNumber[];
   /** Local record of when each trial was cleared, for the Gate Log. */
   gateClears: { tier: TierNumber; date: string }[];
-  /** Move ids learned with stat points. Clearing a Gate only unlocks the option. */
+  /** Move ids learned with skill points. Clearing a Gate only unlocks the option. */
   learnedMoves: string[];
   /** True once the Tier-5 ultimate is learned and the ascension has played. */
   ascended: boolean;

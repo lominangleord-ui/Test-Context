@@ -9,11 +9,15 @@ import type { BasicSkill, GameClassId, GameState, StatKey, StoryEpisode } from "
  * affordable at every level.
  */
 
-/** The stat line a hunter holding their own is expected to have at a level. */
+/** The stat line a hunter holding their own is expected to have at a level.
+ *  Auto-growth gives +1 to each stat per level up (so 9/10/11 at level 2 etc).
+ *  A hunter who clears dailies and spends about 60% of their earned points on
+ *  STR+VIT/AGI sits roughly where `expectedStatSpread` models them.
+ */
 export function expectedStatSpread(level: number): [number, number, number] {
-  // 10 in each stat at level 1, plus 3 points per level split evenly.
-  const perStat = 10 + Math.max(0, level - 1);
-  return [perStat, perStat, perStat];
+  const base = 10 + Math.max(0, level - 1); // auto +1/level
+  const spend = Math.max(0, level - 1) * 3; // ~3 pts/level spent into combat stats
+  return [base + Math.round(spend * 0.5), base + Math.round(spend * 0.2), base + Math.round(spend * 0.3)];
 }
 
 /** The same spread run through the real battle math, at zero fatigue. */
@@ -34,17 +38,21 @@ export interface EnemyTemplate {
 
 /**
  * Enemy stats are derived from the expected hunter at the episode's level rather
- * than hand-tuned per tile, so the whole 40-level act stays in the same band:
- * roughly five turns to kill a field enemy while surviving seven.
+ * than hand-tuned per tile. Tuned to the economy where stat points still make
+ * the hunter noticeably stronger but a baseline (auto-growth only) hunter can
+ * clear tiles with the right skills.
  */
 export function enemyFor(episode: StoryEpisode): EnemyTemplate {
   const { combat } = expectedCombat(episode.level);
   const expectedHP = combat.maxHP;
   const expectedATK = combat.baseATK;
   const expectedDEF = combat.baseDEF;
-  const fieldDef = Math.round(expectedATK * 0.35);
-  const fieldHP = Math.round(expectedATK * 2.95);
-  const fieldATK = expectedDEF + Math.round(expectedHP / 6.5);
+  // Tuned so an investing hunter wins in ~4 turns and survives ~8 (2:1 ratio),
+  // while a fresh 0-pts-spent hunter still survives 5-6 turns at L1 so the first
+  // tile is winnable via basic skills alone. Bosses scale 1.3× HP, 1.1× ATK.
+  const fieldDef = Math.round(expectedATK * 0.30);
+  const fieldHP = Math.round(expectedATK * 2.6);
+  const fieldATK = expectedDEF + Math.round(expectedHP / 8.5);
   return {
     name: episode.enemy,
     hp: Math.round(fieldHP * episode.hpScale),
@@ -56,7 +64,6 @@ export function enemyFor(episode: StoryEpisode): EnemyTemplate {
 }
 
 export interface Forecast {
-  /** Turns for you to kill it, and for it to kill you, playing sensibly. */
   turnsToKill: number;
   turnsToSurvive: number;
   verdict: "favoured" | "even" | "desperate";
@@ -64,16 +71,14 @@ export interface Forecast {
 }
 
 /**
- * An analytic forecast rather than a simulation: assume a sensible opening
- * (weaken, then guard) and then repeat your best damage move. It exists so the
- * map can tell a hunter whether they are ready before they spend the points.
+ * An analytic forecast rather than a simulation.
  */
 export function forecastFight(enemy: EnemyTemplate, combat: BattleStats, hasKit: boolean): Forecast {
-  const power = hasKit ? 1.28 : 1;
+  const power = hasKit ? 1.25 : 1;
   const buffedATK = combat.atk * (hasKit ? 1.15 : 1);
-  const playerDef = hasKit ? combat.def * 1.15 : combat.def;
+  const playerDef = hasKit ? combat.def * 1.1 : combat.def;
   const playerDamage = Math.max(1, Math.round(buffedATK - enemy.def) * power);
-  const enemyATK = hasKit ? enemy.atk * 0.9 : enemy.atk;
+  const enemyATK = hasKit ? enemy.atk * 0.92 : enemy.atk;
   const enemyDamage = Math.max(1, Math.round(enemyATK - playerDef));
   const turnsToKill = Math.max(1, Math.ceil(enemy.hp / Math.max(1, playerDamage)));
   const turnsToSurvive = Math.max(1, Math.ceil(combat.maxHP / enemyDamage));
@@ -85,11 +90,11 @@ export function forecastFight(enemy: EnemyTemplate, combat: BattleStats, hasKit:
       ? "You finish this comfortably."
       : verdict === "even"
         ? "Close. Learn and use your whole kit."
-        : "It outlasts you on a straight trade. Prepare first.",
+        : "It outlasts you on a straight trade. Spend skill points on your kit or stat points on your stats.",
   };
 }
 
-export type EpisodeStatus = "cleared" | "locked" | "unaffordable" | "needs-path" | "ready";
+export type EpisodeStatus = "cleared" | "locked" | "needs-path" | "ready";
 
 export interface EpisodeAvailability {
   status: EpisodeStatus;
@@ -100,7 +105,7 @@ export interface EpisodeAvailability {
 
 interface StoryState {
   level: number;
-  pts: number;
+  sp: number;
   storyCleared: number[];
   gameClass: GameClassId | null;
   basicSkills: string[];
@@ -111,17 +116,23 @@ interface StoryState {
   fatigueLevel: number;
 }
 
+/** The previous tile in the map must be cleared to enter a new tile. */
+export function prevEpisodeCleared(cleared: number[], level: number): boolean {
+  if (level <= 1) return true;
+  return cleared.includes(level - 1);
+}
+
 export function episodeAvailability(state: StoryState, episode: StoryEpisode): EpisodeAvailability {
   const combat = deriveBattleStats(state);
   const enemy = enemyFor(episode);
   const hasKit = state.basicSkills.length > 0;
   const forecast = forecastFight(enemy, combat, hasKit);
   const cleared = state.storyCleared.includes(episode.level);
-  if (cleared) return { status: "cleared", reason: "Cleared. Replaying costs nothing and pays nothing.", enemy, forecast };
+  if (cleared) return { status: "cleared", reason: "Cleared. Replay for practice; no extra rewards.", enemy, forecast };
   if (state.level < episode.level) return { status: "locked", reason: `Unlocks at hunter level ${episode.level}.`, enemy, forecast };
+  if (!prevEpisodeCleared(state.storyCleared, episode.level)) return { status: "locked", reason: "Clear the previous tile first.", enemy, forecast };
   if (episode.kind === "job" && !state.monarchPath) return { status: "needs-path", reason: "Report to the Association for the Job Change ceremony first.", enemy, forecast };
-  if (state.pts < episode.cost) return { status: "unaffordable", reason: `Costs ${episode.cost} unspent stat points (you have ${state.pts}).`, enemy, forecast };
-  return { status: "ready", reason: `Costs ${episode.cost} stat point${episode.cost === 1 ? "" : "s"}.`, enemy, forecast };
+  return { status: "ready", reason: "Ready to enter.", enemy, forecast };
 }
 
 /** The tile the hunter is standing on: the lowest uncleared level they have reached. */
@@ -130,12 +141,13 @@ export function currentEpisode(state: Pick<StoryState, "storyCleared">): StoryEp
   return target ?? STORY_EPISODES[STORY_EPISODES.length - 1];
 }
 
-export function storyTotals(cleared: number[]): { pointsSpent: number; clears: number; gold: number } {
+export function storyTotals(cleared: number[]): { pointsSpent: number; clears: number; gold: number; spEarned: number } {
   const episodes = STORY_EPISODES.filter((episode) => cleared.includes(episode.level));
   return {
-    pointsSpent: episodes.reduce((total, episode) => total + episode.cost, 0),
+    pointsSpent: 0,
     clears: episodes.length,
     gold: episodes.reduce((total, episode) => total + episode.gold, 0),
+    spEarned: episodes.reduce((total, ep) => total + (ep.kind === "job" ? 0 : ep.kind === "field" ? 1 : 2), 0),
   };
 }
 
@@ -145,27 +157,30 @@ export function isSkillLearned(state: Pick<GameState, "basicSkills">, skill: Bas
 }
 
 export function skillLockReason(
-  state: Pick<GameState, "basicSkills" | "pts" | "level">,
+  state: Pick<GameState, "basicSkills" | "sp" | "level">,
   skill: BasicSkill,
 ): string | null {
   if (skill.starter) return "Granted with your class.";
   if (isSkillLearned(state, skill)) return "Already learned.";
   if (state.level < skill.level) return `Unlocks at level ${skill.level}.`;
-  if (state.pts < skill.cost) return `Needs ${skill.cost} unspent stat points (you have ${state.pts}).`;
+  if (state.sp < skill.cost) return `Needs ${skill.cost} skill points (you have ${state.sp}).`;
   return null;
 }
 
-export function canLearnSkill(state: Pick<GameState, "basicSkills" | "pts" | "level">, skill: BasicSkill): boolean {
+export function canLearnSkill(
+  state: Pick<GameState, "basicSkills" | "sp" | "level">,
+  skill: BasicSkill,
+): boolean {
   return skillLockReason(state, skill) === null;
 }
 
 export function spendSkillPoints(
-  state: Pick<GameState, "basicSkills" | "pts" | "level" | "gameClass">,
+  state: Pick<GameState, "basicSkills" | "sp" | "level" | "gameClass">,
   id: string,
-): { basicSkills: string[]; pts: number } | null {
+): { basicSkills: string[]; sp: number } | null {
   const skill = classSkills(state.gameClass).find((entry) => entry.id === id);
   if (!skill || !canLearnSkill(state, skill)) return null;
-  return { basicSkills: [...state.basicSkills, skill.id], pts: state.pts - skill.cost };
+  return { basicSkills: [...state.basicSkills, skill.id], sp: state.sp - skill.cost };
 }
 
 /** First unlearned node in the class tree, for story rewards that grant skills. */
@@ -174,21 +189,24 @@ export function nextSkillReward(state: Pick<GameState, "gameClass" | "basicSkill
 }
 
 /**
- * The economy guarantee the brief asks for: every class must be able to own its
- * entire kit by level 30, out of the 3 points a level pays.
+ * Economy guarantee: every class can own its entire kit out of SP earned
+ * from the tiles available by level 30.
  */
-export function kitGuarantee(id: GameClassId): { cost: number; levelCap: number; pointsByLevel30: number; affordable: boolean } {
+export function kitGuarantee(id: GameClassId): { cost: number; levelCap: number; spByLevel30: number; affordable: boolean } {
   const kit = classSkills(id);
   const cost = kit.reduce((total, skill) => total + (skill.starter ? 0 : skill.cost), 0);
   const levelCap = kit.reduce((highest, skill) => Math.max(highest, skill.level), 1);
-  const pointsByLevel30 = 3 * 29;
-  return { cost, levelCap, pointsByLevel30, affordable: cost <= pointsByLevel30 && levelCap <= 30 };
+  // SP earned by level 30: tiles 1-30 include all beats at 1, 5, 10, 15, 20, 25, 30 (7 beats at 2 SP = 14)
+  // plus 23 field tiles at 1 SP = 23, total 37.
+  const spByLevel30 = 37;
+  return { cost, levelCap, spByLevel30, affordable: cost <= spByLevel30 && levelCap <= 30 };
 }
 
-/** Act I's point cost, so the act and the class kit can be checked against income. */
-export function actOneCost(cleared: number[] = []): number {
-  const through30 = STORY_EPISODES.filter((episode) => episode.level <= 30 && !cleared.includes(episode.level));
-  return through30.reduce((total, episode) => total + episode.cost, 0);
+/** Act I's SP income for balancing checks. */
+export function actOneSP(cleared: number[] = []): number {
+  return STORY_EPISODES
+    .filter((ep) => ep.level <= 40 && !cleared.includes(ep.level))
+    .reduce((total, ep) => total + (ep.kind === "job" ? 0 : ep.kind === "field" ? 1 : 2), 0);
 }
 
 /** Stat keys a class leans on, for the tree's header. */

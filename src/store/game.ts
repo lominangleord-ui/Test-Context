@@ -139,6 +139,7 @@ function defaultState(): GameState {
     avatar: "/avatars/hunter-1.jpg",
     level: 1,
     pts: 3,
+    sp: 0,
     streak: 0,
     hp: hpMax,
     hpMax,
@@ -477,11 +478,11 @@ export const useGame = create<Store>()(
           }
           const spend = spendSkillPoints(s, id);
           if (!spend) return;
-          set({ basicSkills: spend.basicSkills, pts: spend.pts });
+          set({ basicSkills: spend.basicSkills, sp: spend.sp });
           audio.chime();
           get().notify({
             title: "Skill Learned",
-            message: `<b>${skill.name}</b> learned for ${skill.cost} stat points.`,
+            message: `<b>${skill.name}</b> learned for ${skill.cost} skill point${skill.cost === 1 ? "" : "s"}.`,
             type: "System",
           });
         },
@@ -496,19 +497,23 @@ export const useGame = create<Store>()(
           const alreadyCleared = s.storyCleared.includes(level);
           if (alreadyCleared) return true;
 
+          // SP reward: field tiles grant 1; story/boss tiles grant 2;
+          // the level-40 Job Change ceremony grants none (the first Gate pays double to seed Act II).
+          const spReward = episode.kind === "job" ? 0 : episode.kind === "field" ? 1 : 2;
+
           // Story beats hand over the next unlearned node of the class tree, so a
           // hunter who never spends a point still finishes the act with a kit.
           const reward = episode.grantsSkill ? nextSkillReward(s) : null;
           set({
             storyCleared: [...s.storyCleared, level].sort((a, b) => a - b),
-            pts: s.pts - episode.cost,
+            sp: s.sp + spReward,
             gold: s.gold + episode.gold,
             basicSkills: reward ? [...s.basicSkills, reward.id] : s.basicSkills,
           });
           audio.questComplete();
           get().notify({
             title: `${episode.title} — cleared`,
-            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, ${episode.cost} stat point${episode.cost === 1 ? "" : "s"} spent.`
+            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, +${spReward} skill point${spReward === 1 ? "" : "s"}.`
               + (reward ? `<br/>Skill granted free: <b>${reward.name}</b>.` : ""),
             type: "System",
           });
@@ -554,9 +559,13 @@ export const useGame = create<Store>()(
            const unlockedMove = path.moves[tier - 1];
            const maxBefore = pathBonuses(s).shieldMax;
            const maxAfter = pathBonuses({ monarchPath: s.monarchPath, clearedGates: newlyCleared }).shieldMax;
+           // A Gate clear grants exactly enough SP to learn its move (plus a 1-SP buffer
+           // for the first Gate to seed the Monarch tree, since the Job Change tile gives 0).
+           const spReward = unlockedMove.cost + (tier === 1 ? 1 : 0);
            set({
              clearedGates: newlyCleared,
              gateClears,
+             sp: s.sp + spReward,
              ...rewardMessage.patch,
              shieldCharges: Math.min(maxAfter, s.shieldCharges + (maxAfter - maxBefore)),
              shieldWeek: maxAfter > 0 ? mondayKey() : s.shieldWeek,
@@ -565,7 +574,7 @@ export const useGame = create<Store>()(
            audio.rankUp();
             get().notify({
               title: `${band.name} Gate Cleared`,
-              message: `<b>${path.tiers[tier - 1].gateName}</b> conquered in battle.<br/>Title unlocked: <b>Cleared: ${path.tiers[tier - 1].gateName}</b><br/>Move unlocked: <b>${unlockedMove.name}</b> — learn it for ${unlockedMove.cost} stat points in the PATH tab.<br/>${rewardMessage.message}`,
+              message: `<b>${path.tiers[tier - 1].gateName}</b> conquered in battle.<br/>Title unlocked: <b>Cleared: ${path.tiers[tier - 1].gateName}</b><br/>Move unlocked: <b>${unlockedMove.name}</b> — learn it for ${unlockedMove.cost} skill points via the ✦ Skill Tree.<br/>${rewardMessage.message}`,
               type: "System",
             });
            return true;
@@ -584,7 +593,7 @@ export const useGame = create<Store>()(
           }
           const spend = spendMovePoints(s, id);
           if (!spend) return;
-          set({ learnedMoves: spend.learnedMoves, pts: spend.pts });
+          set({ learnedMoves: spend.learnedMoves, sp: spend.sp });
           // Learning the Tier-5 move is the ascension: the job class is replaced
           // by the Monarch title everywhere from that moment on.
           if (spend.isUltimate && !s.ascended && path) {

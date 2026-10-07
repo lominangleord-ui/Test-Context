@@ -64,7 +64,7 @@ export function isMoveLearned(state: Pick<GameState, "learnedMoves">, move: Path
 
 /** Why a move is not learnable yet — drives both the lock tooltip and the button. */
 export function moveUnlockReason(
-  state: Pick<GameState, "clearedGates" | "learnedMoves" | "str" | "agi" | "vit" | "pts">,
+  state: Pick<GameState, "clearedGates" | "learnedMoves" | "str" | "agi" | "vit" | "sp">,
   move: PathMove,
 ): string | null {
   if (move.role === "basic") return "Always available.";
@@ -75,12 +75,12 @@ export function moveUnlockReason(
   if (move.requiresStat && state[move.requiresStat.stat] < move.requiresStat.amount) {
     return `Needs ${move.requiresStat.amount} ${move.requiresStat.stat.toUpperCase()} (you have ${state[move.requiresStat.stat]}).`;
   }
-  if (state.pts < move.cost) return `Needs ${move.cost} unspent stat points (you have ${state.pts}).`;
+  if (state.sp < move.cost) return `Needs ${move.cost} skill points (you have ${state.sp}).`;
   return null;
 }
 
 export function canLearnMove(
-  state: Pick<GameState, "clearedGates" | "learnedMoves" | "str" | "agi" | "vit" | "pts">,
+  state: Pick<GameState, "clearedGates" | "learnedMoves" | "str" | "agi" | "vit" | "sp">,
   move: PathMove,
 ): boolean {
   return move.role !== "basic" && moveUnlockReason(state, move) === null;
@@ -88,14 +88,14 @@ export function canLearnMove(
 
 /** Pure spend: the caller applies the returned patch. Never auto-grants. */
 export function spendMovePoints(
-  state: Pick<GameState, "clearedGates" | "learnedMoves" | "str" | "agi" | "vit" | "pts" | "monarchPath">,
+  state: Pick<GameState, "clearedGates" | "learnedMoves" | "str" | "agi" | "vit" | "sp" | "monarchPath">,
   id: string,
-): { learnedMoves: string[]; pts: number; isUltimate: boolean } | null {
+): { learnedMoves: string[]; sp: number; isUltimate: boolean } | null {
   const move = findMove(getPath(state.monarchPath), id);
   if (!move || !canLearnMove(state, move)) return null;
   return {
     learnedMoves: [...state.learnedMoves, move.id],
-    pts: state.pts - move.cost,
+    sp: state.sp - move.cost,
     isUltimate: move.role === "ultimate",
   };
 }
