@@ -19,7 +19,8 @@ const tmpDir = mkdtempSync(join(tmpdir(), 'arena-test-'));
 
 const { useGame } = await import('/home/user/Test-Context/src/store/game.ts');
 const { useUi } = await import('/home/user/Test-Context/src/store/ui.ts');
-const { episodeAvailability, prevEpisodeCleared, storyTotals, expectedCombat, enemyFor, skillLockReason, kitGuarantee, actOneSPRemaining } = await import('/home/user/Test-Context/src/lib/story.ts');
+const { episodeAvailability, prevEpisodeCleared, storyTotals, expectedCombat, enemyFor, expectedKitAt, forecastFight, skillLockReason, kitGuarantee, actOneSPRemaining } = await import('/home/user/Test-Context/src/lib/story.ts');
+const { deriveBattleStats } = await import('/home/user/Test-Context/src/lib/battle.ts');
 const { classSkills } = await import('/home/user/Test-Context/src/data/classes.ts');
 const { STORY_EPISODES, getEpisode } = await import('/home/user/Test-Context/src/data/story.ts');
 
@@ -149,18 +150,36 @@ assert(regionUnlocked([1,2,3,4,5,6,7,8],'sunken-marsh')===false,'SM hidden when 
 assert(regionUnlocked(Array.from({length:9},(_,i)=>i+1),'sunken-marsh')===true,'SM visible after all VR');
 assert(regionUnlocked(Array.from({length:9},(_,i)=>i+1),'red-caverns')===false,'RC still hidden after VR');
 
-// Balance
-console.log('\n-- Balance (investing hunter wins every tile) --');
-let tight=0;
+// Balance — the reality-check contract (see enemyFor docs):
+//  * the trained, ALLOCATED hunter wins every field tile outright on forecast,
+//    and every boss/beat within two turns (a deficit potions and skills cover);
+//  * a same-level hunter on auto-growth stats alone (no workout, unspent points)
+//    must LOSE every tile — bosses exist to be earned, not farmed.
+console.log('\n-- Balance (dedicated scrape through; idle lose) --');
+let modelFail=0, idleWin=0, stroll=0;
 for (const ep of STORY_EPISODES) {
-  const {combat} = expectedCombat(ep.level);
   const e = enemyFor(ep);
-  const myDmg = Math.max(1, Math.round(combat.atk*1.15 - e.def));
-  const enDmg = Math.max(1, Math.round(e.atk*0.92 - combat.def*1.1));
-  const tk = Math.ceil(e.hp/myDmg), ts = Math.ceil(combat.maxHP/enDmg);
-  if (ts <= tk) { console.log('  TIGHT L'+ep.level, 'kill='+tk,'survive='+ts); tight++; }
+  const { combat } = expectedCombat(ep.level);
+  const kit = expectedKitAt(ep.level);
+  const f = forecastFight(e, combat, kit);
+  const m = f.turnsToSurvive - f.turnsToKill;
+  const isField = ep.kind === "field";
+  if (isField ? m < 1 : m < -2) { modelFail++; console.log('  MODEL-FAIL L'+ep.level, ep.kind, 'm='+m); }
+  if (m > (isField ? 6 : 4)) { stroll++; console.log('  STROLL L'+ep.level, ep.kind, 'm='+m); }
+  const idle = deriveBattleStats({ str: 9 + ep.level, agi: 9 + ep.level, vit: 9 + ep.level, fatigueLevel: 25 });
+  const g = forecastFight(e, idle, 1);
+  if (g.turnsToSurvive >= g.turnsToKill) { idleWin++; console.log('  IDLE-WIN L'+ep.level, ep.kind, `k${g.turnsToKill}/l${g.turnsToSurvive}`); }
 }
-assert(tight===0, 'all '+STORY_EPISODES.length+' tiles winnable (tight='+tight+')');
+assert(modelFail===0, 'trained+allocated hunter wins (or is within a potion of) every tile');
+assert(stroll===0, 'no tile becomes a stroll for the model hunter');
+assert(idleWin===0, 'every tile beats a same-level hunter who never trained or spent');
+// The L1 tutorial specifically: unspent = loss, spending the 3 points = win.
+const g1 = enemyFor(getEpisode(1)!);
+const sofa1 = forecastFight(g1, deriveBattleStats({ str: 10, agi: 10, vit: 10, fatigueLevel: 0 }), 1);
+const spent1 = forecastFight(g1, deriveBattleStats({ str: 13, agi: 11, vit: 11, fatigueLevel: 0 }), 1);
+assert(sofa1.turnsToSurvive < sofa1.turnsToKill, 'fresh unspent hunter loses the first Gate');
+assert(spent1.turnsToSurvive >= spent1.turnsToKill, 'spending the awakening points opens the first Gate');
+console.log(`  L1: unspent k${sofa1.turnsToKill}/l${sofa1.turnsToSurvive} (loss), spent k${spent1.turnsToKill}/l${spent1.turnsToSurvive} (${spent1.verdict})`);
 
 // SP economy
 console.log('\n-- SP economy --');

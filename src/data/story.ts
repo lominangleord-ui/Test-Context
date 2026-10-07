@@ -122,73 +122,66 @@ const BEATS: Record<number, Beat> = {
     kind: "boss", title: "The first Gate", enemy: "Blood-Red Hobgoblin", enemyArt: "/art/boss-hobgoblin.jpg", npc: "system",
     briefing: "Defeat the Gate's guardian. Prove you can hold a weapon before the Association issues you one.",
     prose: "It is smaller than the stories say a monster should be, and it is still twice your size. It has been eating the people who came before you.",
-    gold: 60, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 35, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   5: {
     kind: "story", title: "The Association's offer", enemy: "Marsh Lurker", npc: "handler",
     briefing: "Handler Seo wants proof before she files you as anything but a body.",
     prose: "She watches you from the ridge with her arms folded, taking notes on a hunter she has already decided not to bet on.",
-    gold: 120, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 70, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   10: {
     kind: "boss", title: "Stone Sentinel", enemy: "Stone Sentinel", enemyArt: "/art/boss-sentinel.jpg",
     briefing: "The ruins' guardian has woken. It does not intend to let the survey finish.",
     prose: "It was a statue for four hundred years and it is still faster than you expected. Each step cracks the flagstones it leaves behind.",
-    gold: 200, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 110, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   15: {
     kind: "story", title: "Master Kang's lesson", enemy: "Ashen Revenant", npc: "mentor",
     briefing: "Kang will not teach you anything until you can survive his first test.",
     prose: "He drops you into the ash without a warning or a rope. The thing that meets you at the bottom has been dead for years and has not stopped moving.",
-    gold: 280, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 150, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   20: {
     kind: "boss", title: "Iron Tusk", enemy: "Iron Tusk", enemyArt: "/art/boss-irontusk.jpg",
     briefing: "A cavern beast at the mana fall. Kill it or turn the whole floor over to it.",
     prose: "It wears a broken sword in one shoulder like a splinter it never bothered to remove. The wound should have killed it twice over.",
-    gold: 360, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 190, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   25: {
     kind: "story", title: "The handler's wager", enemy: "Void Serpent", npc: "handler",
     briefing: "Seo has put her own name on your file. Do not make her regret it.",
     prose: "The serpent does not swim so much as decide where the water should be. She shouts something encouraging and mostly profane from the bank.",
-    gold: 440, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 230, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   30: {
     kind: "boss", title: "Black Fang Alpha", enemy: "Black Fang Alpha", enemyArt: "/art/boss-alpha.jpg",
     briefing: "The pack's alpha has been feeding on hunters for a month. End it.",
     prose: "It circles without hurrying. The rest of the pack stays back, which tells you exactly how these fights usually end.",
-    gold: 520, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 270, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   35: {
     kind: "story", title: "Kang's last condition", enemy: "Crimson Ogre", npc: "mentor",
     briefing: "One more floor with Kang watching, and he will call you a hunter.",
     prose: "The ogre has been drinking from the mana vent for years. Kang doesn't step in, and doesn't look away either.",
-    gold: 620, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 320, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   39: {
     kind: "boss", title: "The Gate Warden", enemy: "Gate Warden", enemyArt: "/art/boss-warden.jpg",
     briefing: "The last thing between you and the top of the Citadel. Everything else you have fought was a lesser version of it.",
     prose: "It has guarded this floor since before the Association had a name for what a Gate was. It looks at you the way a wall looks at weather.",
-    gold: 800, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
+    gold: 420, rewardNote: "First clear: +2 skill points for your ✦ Skill Tree, plus gold.",
   },
   40: {
     kind: "job", title: "The Job Change", enemy: "Trial Warden", enemyArt: "/art/ceremony-job-change.jpg", npc: "system",
     briefing: "The System has prepared a class nobody has held before. Accept it, or stay exactly what you are.",
     prose: "You are standing in your own shadow and it is the wrong shape. The System asks the question it has been building toward since level one.",
-    gold: 1000, rewardNote: "First clear: the Job Change ceremony, a Monarch path, and its first Gate.",
+    gold: 600, rewardNote: "First clear: the Job Change ceremony, a Monarch path, and its first Gate.",
   },
 };
 
 function regionFor(level: number): StoryRegion {
   return STORY_REGIONS.find((region) => level >= region.from && level <= region.to) ?? STORY_REGIONS[0];
-}
-
-/** Bosses scale with the act's band, so the tutorial stays winnable and the Citadel does not. */
-function bossScales(level: number): { hp: number; atk: number; def: number } {
-  if (level <= 10) return { hp: 1.15, atk: 0.95, def: 1.1 };
-  if (level <= 29) return { hp: 1.35, atk: 1.05, def: 1.12 };
-  return { hp: 1.6, atk: 1.15, def: 1.15 };
 }
 
 /**
@@ -198,12 +191,9 @@ export function buildEpisode(level: number): StoryEpisode {
   const region = regionFor(level);
   const beat = BEATS[level];
   if (beat) {
-    const scales = beat.kind === "field" ? { hp: 1, atk: 1, def: 1 } : bossScales(level);
-    const kindScales = beat.kind === "story" ? { hp: 1.2, atk: 1, def: 1.05 } : scales;
     return {
       level, kind: beat.kind, region: region.id, title: beat.title, enemy: beat.enemy,
       enemyArt: beat.enemyArt, npc: beat.npc, briefing: beat.briefing, prose: beat.prose,
-      hpScale: kindScales.hp, atkScale: kindScales.atk, defScale: kindScales.def,
       gold: beat.gold, rewardNote: beat.rewardNote,
     };
   }
@@ -213,9 +203,8 @@ export function buildEpisode(level: number): StoryEpisode {
   return {
     level, kind: "field", region: region.id, title: template.title, enemy,
     briefing: template.briefing, prose: template.prose,
-    hpScale: 1, atkScale: 1, defScale: 1,
-    gold: 20 + level * 8,
-    rewardNote: `Clear reward: ${20 + level * 8} gold. First clear of a story beat also grants a free class skill.`,
+    gold: 10 + level * 4,
+    rewardNote: `Clear reward: ${10 + level * 4} gold, paid once.`,
   };
 }
 

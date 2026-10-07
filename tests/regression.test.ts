@@ -5,7 +5,7 @@ import { GATE_BOSS_STATS, MONARCH_PATHS, PATH_TIERS, PATH_FLOURISH_IDS, gateTitl
 import { deriveBattleStats, readinessFromFatigue, rollAttackDamage, signatureDamage } from "../src/lib/battle.ts";
 import { HUNTER_CLASSES, classKitCost, classKitLevelCap, classSkills, defaultClassFor, getClass } from "../src/data/classes.ts";
 import { STORY_BEAT_LEVELS, STORY_EPISODES, STORY_REGIONS, buildEpisode, getEpisode } from "../src/data/story.ts";
-import { enemyFor, episodeAvailability, expectedCombat, forecastFight, kitGuarantee, storyTotals } from "../src/lib/story.ts";
+import { enemyFor, episodeAvailability, expectedCombat, expectedKitAt, forecastFight, kitGuarantee, storyTotals } from "../src/lib/story.ts";
 import { fatigueEarned, goldEarned, mondayKey, pathBonuses, shopCost } from "../src/lib/monarch.ts";
 import { awardXP } from "../src/lib/progression.ts";
 import { grantLoot, resolveLoot } from "../src/lib/loot.ts";
@@ -628,24 +628,55 @@ test("Act I is one quest per level from 1 to 40, each with its own enemy and cos
   }
 });
 
-test("Enemies are level-scaled, and every tile is winnable with the kit available at that level", () => {
+test("Enemies are tuned to the trained hunter: the idle lose, the dedicated win on a knife's edge", () => {
   for (const episode of STORY_EPISODES) {
     const enemy = enemyFor(episode);
-    const { combat } = expectedCombat(episode.level);
+    const isField = episode.kind === "field";
     assert.ok(enemy.hp > 0 && enemy.atk > 0 && enemy.def >= 0);
-    // The enemy must never one-shot: even a bad trade survives a few turns.
-    const enemyDamage = Math.max(1, enemy.atk - combat.def);
-    assert.ok(Math.ceil(combat.maxHP / enemyDamage) >= 5, `tile ${episode.level} can kill a hunter in under 5 turns`);
-    // Fighters get their kit; the forecast must say it is survivable.
-    const withKit = forecastFight(enemy, combat, true);
-    assert.ok(withKit.turnsToKill <= 12, `tile ${episode.level} takes ${withKit.turnsToKill} turns to clear`);
-    assert.ok(withKit.turnsToSurvive >= withKit.turnsToKill, `tile ${episode.level} is a loss even with a full kit`);
-    // The tutorial must be winnable with nothing but the free starter skill.
-    if (episode.level <= 5) {
-      const starterOnly = forecastFight(enemy, combat, false);
-      assert.ok(starterOnly.turnsToSurvive >= starterOnly.turnsToKill, `early tile ${episode.level} needs the whole kit`);
+    // Field tiles never one-shot: a trained hunter survives at least 5 swings.
+    if (isField) {
+      const { combat } = expectedCombat(episode.level);
+      assert.ok(Math.ceil(combat.maxHP / Math.max(1, enemy.atk - combat.def)) >= 5, `tile ${episode.level} can kill a hunter in under 5 turns`);
     }
+    const { combat } = expectedCombat(episode.level);
+    const kit = expectedKitAt(episode.level);
+    const model = forecastFight(enemy, combat, kit);
+    // The fight is real at every tile: never a stroll (≤12 enemy swings to kill)...
+    assert.ok(model.turnsToKill <= 12, `tile ${episode.level} takes ${model.turnsToKill} turns to clear`);
+    // ...never trivial (the model hunter never crushes it)...
+    assert.ok(model.turnsToSurvive - model.turnsToKill <= (isField ? 6 : 4), `tile ${episode.level} is a stroll for the trained hunter`);
+    // ...and the trained, allocated hunter can take it. Beats may run as much as
+    // two turns short on raw forecast — a deficit that one potion of the fifty
+    // the gold economy hands out always covers — but field tiles must be
+    // outright wins for the model hunter, never coin-flips.
+    const margin = model.turnsToSurvive - model.turnsToKill;
+    assert.ok(margin >= (isField ? 1 : -2), `tile ${episode.level} is not winnable by the model hunter`);
+    if (!isField && margin < 0) {
+      const potionTurns = Math.ceil((combat.maxHP * 0.5) / Math.max(1, model.enemyDamage));
+      assert.ok(margin + potionTurns >= 0, `tile ${episode.level} cannot be rescued even with supplies`);
+    }
+    // The motivation clause: a hunter at the same level who never spent a point
+    // must LOSE to the tile. Winning the fight is the reward for the work.
+    const idle = deriveBattleStats({
+      str: 10 + episode.level - 1, agi: 10 + episode.level - 1, vit: 10 + episode.level - 1, fatigueLevel: 25,
+    });
+    const idleForecast = forecastFight(enemy, idle, 1);
+    assert.ok(
+      idleForecast.turnsToSurvive - idleForecast.turnsToKill <= -1,
+      `tile ${episode.level} is winnable on auto-grow stats alone`,
+    );
   }
+  // The L1 contract, spelled out: unspent = loss; the 3 awakening points spent
+  // into STR/VIT flip the first Gate into a win. The tutorial teaches the loop.
+  const gate = getEpisode(1)!, gateEnemy = enemyFor(gate);
+  const sofa = forecastFight(gateEnemy, deriveBattleStats({ str: 10, agi: 10, vit: 10, fatigueLevel: 0 }), 1);
+  assert.ok(sofa.turnsToSurvive < sofa.turnsToKill, "a fresh unspent hunter must lose the first Gate");
+  const spent = forecastFight(
+    gateEnemy,
+    deriveBattleStats({ str: 13, agi: 11, vit: 11, fatigueLevel: 0 }),
+    1,
+  );
+  assert.ok(spent.turnsToSurvive >= spent.turnsToKill, "spending the awakening points must open the first Gate");
 });
 
 test("Story tiles gate on level and previous clear, pay gold plus SP, and never touch stat points", () => {

@@ -104,10 +104,6 @@ export interface StoryEpisode {
   briefing: string;
   /** What the encounter is, in prose. */
   prose: string;
-  /** Multiplies the level-derived enemy stat line. */
-  hpScale: number;
-  atkScale: number;
-  defScale: number;
   /** Gold paid on first clear; SP income is derived from `kind` in lib/story. */
   gold: number;
   rewardNote: string;

@@ -9,15 +9,17 @@ import type { BasicSkill, GameClassId, GameState, StatKey, StoryEpisode } from "
  * affordable at every level.
  */
 
-/** The stat line a hunter holding their own is expected to have at a level.
- *  Auto-growth gives +1 to each stat per level up (so 9/10/11 at level 2 etc).
- *  A hunter who clears dailies and spends about 60% of their earned points on
- *  STR+VIT/AGI sits roughly where `expectedStatSpread` models them.
+/** The stat line a hunter who trains consistently is expected to have at a level.
+ *  Auto-growth gives +1 to each stat per level up. A hunter who clears dailies
+ *  earns ~6 stat points a level (level-ups + daily stipend) and spends nearly
+ *  all of them on combat stats (45% STR, 35% VIT, 20% AGI). Enemies are tuned to
+ *  THIS line — skip the training or bank your points, and the same monster that
+ *  a diligent hunter claws past at 50% HP becomes a wall.
  */
 export function expectedStatSpread(level: number): [number, number, number] {
   const base = 10 + Math.max(0, level - 1); // auto +1/level
-  const spend = Math.max(0, level - 1) * 3; // ~3 pts/level spent into combat stats
-  return [base + Math.round(spend * 0.5), base + Math.round(spend * 0.2), base + Math.round(spend * 0.3)];
+  const spend = Math.max(0, level - 1) * 6; // ~6 pts/level earned from training, spent
+  return [base + Math.round(spend * 0.45), base + Math.round(spend * 0.2), base + Math.round(spend * 0.35)];
 }
 
 /** The same spread run through the real battle math, at zero fatigue. */
@@ -37,29 +39,53 @@ export interface EnemyTemplate {
 }
 
 /**
- * Enemy stats are derived from the expected hunter at the episode's level rather
- * than hand-tuned per tile. Tuned to the economy where stat points (dailies and
- * level-ups) make the hunter noticeably stronger — an investing hunter wins in
- * about half the turns the enemy needs — while a baseline hunter who only takes
- * auto-growth scrapes through early tiles and must spend eventually.
+ * Enemy stats derive from the expected hunter at the tile's level — the hunter
+ * who trains every day AND spends their points — and bosses are then pushed
+ * past that line, per act band. The design targets, verified by sim:
+ *  - field tiles: a real fight; the trained hunter wins having lost most of
+ *    their HP (margin grows from a coin-flip at L2 to comfort by L20 as they
+ *    actually get strong);
+ *  - boss/beat tiles: always stronger on paper. Trained+allocated hunters win
+ *    on a knife's edge and lean on their kit and potions; an unallocated or
+ *    untrained hunter is outmatched and must go earn the difference IRL;
+ *  - L1 tutorial: unspent stats = a loss; spending the 3 awakening points on
+ *    STR/VIT turns it into a scraped-past win. The System grades, the gym fixes.
  */
+/** Kit progression the tuning assumes: one class node learned roughly every
+ *  four levels, all eight owned by 30 (the SP economy forces this pace).
+ */
+export function expectedKitAt(level: number): number {
+  return Math.min(8, 1 + Math.floor(Math.max(0, level - 1) / 4.2));
+}
+
 export function enemyFor(episode: StoryEpisode): EnemyTemplate {
   const { combat } = expectedCombat(episode.level);
   const expectedHP = combat.maxHP;
   const expectedATK = combat.baseATK;
   const expectedDEF = combat.baseDEF;
-  // Tuned so an investing hunter wins in ~4 turns and survives ~8 (2:1 ratio),
-  // while a fresh 0-pts-spent hunter still survives 5-6 turns at L1 so the first
-  // tile is winnable via basic skills alone. Bosses scale 1.3× HP, 1.1× ATK.
-  const fieldDef = Math.round(expectedATK * 0.30);
-  const fieldHP = Math.round(expectedATK * 2.6);
-  const fieldATK = expectedDEF + Math.round(expectedHP / 8.5);
+  const band = episode.level <= 10 ? 0 : episode.level <= 29 ? 1 : 2;
+  const boss = episode.kind === "boss" || episode.kind === "job";
+  const story = episode.kind === "story";
+  // The expected hunter arrives with a growing kit. Enemy lines absorb that
+  // growth (normalized to a level-1 novice's starter skill) so a tile stays
+  // the fight it was designed to be: a hunter LEARNING FASTER than the model
+  // wins with more to spare, one dragging behind eats the difference.
+  const t = expectedKitAt(episode.level) / 8;
+  const t0 = 1 / 8;
+  const kitDmg = ((1 + 0.15 * t) * (1 + 0.25 * t)) / ((1 + 0.15 * t0) * (1 + 0.25 * t0));
+  const kitTank = ((1 + 0.1 * t) / (1 - 0.08 * t)) / ((1 + 0.1 * t0) / (1 - 0.08 * t0));
+  // Base line = the model hunter's own numbers: ~5 hits to put down, and it
+  // answers with roughly a sixth of their HP per swing. The field divisor is
+  // gentler in the first ten levels — a novice should edge fights, not draw them.
+  const hpMult = boss ? [1.12, 1.22, 1.28][band] : story ? [1.06, 1.16, 1.24][band] : 1;
+  const atkDiv = boss ? [5.5, 5.15, 5.0][band] : story ? [5.6, 5.3, 5.15][band] : [5.9, 5.7, 5.6][band];
+  const defMult = boss || story ? 1.12 : 1;
   return {
     name: episode.enemy,
-    hp: Math.round(fieldHP * episode.hpScale),
-    atk: Math.round(fieldATK * episode.atkScale),
-    def: Math.round(fieldDef * episode.defScale),
-    boss: episode.kind === "boss" || episode.kind === "job",
+    hp: Math.round(expectedATK * 4.8 * hpMult * kitDmg),
+    atk: expectedDEF + Math.round(expectedHP * kitTank / atkDiv),
+    def: Math.round(expectedATK * 0.15 * defMult),
+    boss,
     art: episode.enemyArt,
   };
 }
@@ -67,31 +93,36 @@ export function enemyFor(episode: StoryEpisode): EnemyTemplate {
 export interface Forecast {
   turnsToKill: number;
   turnsToSurvive: number;
+  /** What the enemy lands on the hunter per turn in this forecast. */
+  enemyDamage: number;
   verdict: "favoured" | "even" | "desperate";
   note: string;
 }
 
 /**
- * An analytic forecast rather than a simulation.
+ * An analytic forecast rather than a simulation. The kit bonus scales with how
+ * many nodes the hunter has actually learned: one starter skill does not hit
+ * like a full eight-node tree, and the System says so.
  */
-export function forecastFight(enemy: EnemyTemplate, combat: BattleStats, hasKit: boolean): Forecast {
-  const power = hasKit ? 1.25 : 1;
-  const buffedATK = combat.atk * (hasKit ? 1.15 : 1);
-  const playerDef = hasKit ? combat.def * 1.1 : combat.def;
+export function forecastFight(enemy: EnemyTemplate, combat: BattleStats, kitCount: number): Forecast {
+  const t = Math.min(8, Math.max(0, kitCount)) / 8;
+  const power = 1 + 0.25 * t;
+  const buffedATK = combat.atk * (1 + 0.15 * t);
+  const playerDef = combat.def * (1 + 0.1 * t);
   const playerDamage = Math.max(1, Math.round(buffedATK - enemy.def) * power);
-  const enemyATK = hasKit ? enemy.atk * 0.92 : enemy.atk;
+  const enemyATK = enemy.atk * (1 - 0.08 * t);
   const enemyDamage = Math.max(1, Math.round(enemyATK - playerDef));
   const turnsToKill = Math.max(1, Math.ceil(enemy.hp / Math.max(1, playerDamage)));
   const turnsToSurvive = Math.max(1, Math.ceil(combat.maxHP / enemyDamage));
   const margin = turnsToSurvive - turnsToKill;
   const verdict = margin >= 3 ? "favoured" : margin >= 1 ? "even" : "desperate";
   return {
-    turnsToKill, turnsToSurvive, verdict,
+    turnsToKill, turnsToSurvive, enemyDamage, verdict,
     note: verdict === "favoured"
-      ? "You finish this comfortably."
+      ? "You outmatch it. Save the potion."
       : verdict === "even"
-        ? "Close. Learn and use your whole kit."
-        : "It outlasts you on a straight trade. Spend skill points on your kit or stat points on your stats.",
+        ? "Close. Train hard, spend your points, use the whole kit."
+        : "It is stronger than you. Go work out, allocate stat points, learn skills — then come back.",
   };
 }
 
@@ -126,8 +157,7 @@ export function prevEpisodeCleared(cleared: number[], level: number): boolean {
 export function episodeAvailability(state: StoryState, episode: StoryEpisode): EpisodeAvailability {
   const combat = deriveBattleStats(state);
   const enemy = enemyFor(episode);
-  const hasKit = state.basicSkills.length > 0;
-  const forecast = forecastFight(enemy, combat, hasKit);
+  const forecast = forecastFight(enemy, combat, state.basicSkills.length);
   const cleared = state.storyCleared.includes(episode.level);
   if (cleared) return { status: "cleared", reason: "Cleared. Replay for practice; no extra rewards.", enemy, forecast };
   if (state.level < episode.level) return { status: "locked", reason: `Unlocks at hunter level ${episode.level}.`, enemy, forecast };
