@@ -319,7 +319,6 @@ export function StoryBattle() {
                     <div className="font-sys text-[10px] tracking-[0.2em] text-[color:var(--green)]">FIRST CLEAR</div>
                     <p className="text-[12px] text-[color:var(--text-bright)] mt-1">
                       +{episode.gold} gold · +{episode.kind === "job" ? "Job Change ceremony" : `${episode.kind === "field" ? 1 : 2} skill point${episode.kind === "field" ? "" : "s"}`}
-                      {episode.grantsSkill ? " · a free class skill if any remain unlearned" : ""}
                     </p>
                     <p className="font-mono text-[9.5px] text-[color:var(--text-dim)] mt-1">{episode.rewardNote}</p>
                   </>

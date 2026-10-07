@@ -49,7 +49,7 @@ function Tile({
 function EpisodePanel({ episode, region }: { episode: StoryEpisode; region: StoryRegion | typeof ACT_II_REGIONS[number] }) {
   const open = useUi((s) => s.openStoryBattle);
   const state = useGame(useShallow((game) => ({
-    level: game.level, pts: game.pts, str: game.str, agi: game.agi, vit: game.vit,
+    level: game.level, sp: game.sp, str: game.str, agi: game.agi, vit: game.vit,
     fatigueLevel: game.fatigueLevel, gameClass: game.gameClass, basicSkills: game.basicSkills,
     storyCleared: game.storyCleared, monarchPath: game.monarchPath,
     blocked: game.dead || game.inLockdown,
@@ -82,8 +82,8 @@ function EpisodePanel({ episode, region }: { episode: StoryEpisode; region: Stor
       <div className="story-statgrid">
         <div><span>ENEMY</span><b>{availability.enemy.name}</b></div>
         <div><span>HP / ATK / DEF</span><b>{availability.enemy.hp} / {availability.enemy.atk} / {availability.enemy.def}</b></div>
-        <div><span>COST</span><b>{episode.cost} PT</b></div>
-        <div><span>REWARD</span><b>{episode.gold} GOLD</b></div>
+        <div><span>REWARD</span><b>{episode.kind === "job" ? "JOB CHANGE" : `+${episode.kind === "field" ? 1 : 2} SP · ${episode.gold} GOLD`}</b></div>
+        <div><span>REQUIREMENT</span><b>LV {episode.level}{episode.level > 1 ? " · PREV TILE" : ""}</b></div>
       </div>
 
       <div className="story-forecast" style={{ borderColor: forecastColor }}>
@@ -188,10 +188,11 @@ function KitPreview({ gameClass, learned }: { gameClass: ReturnType<typeof getCl
 
 export function JourneyTab() {
   const s = useGame(useShallow((state) => ({
-    gameClass: state.gameClass, level: state.level, pts: state.pts, storyCleared: state.storyCleared,
+    gameClass: state.gameClass, level: state.level, pts: state.pts, sp: state.sp, storyCleared: state.storyCleared,
     basicSkills: state.basicSkills, dead: state.dead, inLockdown: state.inLockdown,
     monarchPath: state.monarchPath, ascended: state.ascended, clearedGates: state.clearedGates,
   })));
+  const open = useUi((st) => st.openStoryBattle);
   const [selected, setSelected] = useState<number | null>(null);
   const current = currentEpisode(s);
   const selectedLevel = selected ?? current.level;
@@ -205,6 +206,18 @@ export function JourneyTab() {
     ? (s.ascended ? path.monarchTitle : path.jobClass)
     : (hunterClass?.name ?? "Hunter");
 
+  // Region gating: hide a region until all tiles in every earlier region are cleared.
+  const regionTiles: Record<string, [number, number]> = { "verdant-ruins": [1,9], "sunken-marsh": [10,19], "red-caverns": [20,32], "crimson-citadel": [33,40] };
+  const regionOrder = ["verdant-ruins", "sunken-marsh", "red-caverns", "crimson-citadel"];
+  function regionUnlocked(rid: string): boolean {
+    const idx = regionOrder.indexOf(rid);
+    for (let i = 0; i < idx; i++) {
+      const [lo, hi] = regionTiles[regionOrder[i]];
+      for (let lv = lo; lv <= hi; lv++) if (!s.storyCleared.includes(lv)) return false;
+    }
+    return true;
+  }
+
   return (
     <div className="space-y-4">
       <SystemWindow title="THE JOURNEY" accent="var(--cyan)">
@@ -214,11 +227,10 @@ export function JourneyTab() {
               {hunterClass?.icon} {title.toUpperCase()}
             </div>
             <p className="text-[12px] text-[color:var(--text-mid)] leading-relaxed mt-1">
-              Act I: Levels 1–40. One tile per level, walked in order. Every tile costs stat points
-              to clear and pays gold. The Job Change waits at level 40; the Monarch trials beyond.
+              Act I: Levels 1–40. One tile per level, walked in order; clear a tile to unlock the next. Tiles cost <b>nothing</b> to enter — only level and the previous tile are required. Clearing tiles grants skill points for the ✦ Skill Tree; stat points come from dailies &amp; level-ups and buy STR / AGI / VIT.
             </p>
             <p className="font-mono text-[9.5px] text-[color:var(--text-dim)] mt-2">
-              {totals.clears} / 40 ACT I TILES · {totals.pointsSpent} POINTS SPENT · {s.pts} IN HAND
+              {totals.clears} / 40 ACT I TILES · {totals.spEarned} SP EARNED · {s.sp} SP IN HAND · {s.pts} STAT PT{s.pts !== 1 ? "S" : ""} IN HAND
             </p>
           </div>
           <div className="text-right">
@@ -228,8 +240,8 @@ export function JourneyTab() {
         </div>
       </SystemWindow>
 
-      {/* NES-style grid map */}
-      {STORY_REGIONS.map((storyRegion) => {
+      {/* NES-style grid map — regions only render once every prior region is fully cleared. */}
+      {STORY_REGIONS.filter((sr) => regionUnlocked(sr.id)).map((storyRegion) => {
         const tiles = Array.from({ length: storyRegion.to - storyRegion.from + 1 }, (_, i) => storyRegion.from + i);
         const clearedInRegion = tiles.filter((lvl) => s.storyCleared.includes(lvl)).length;
         return (
@@ -243,9 +255,11 @@ export function JourneyTab() {
                     const tile = getEpisode(level);
                     if (!tile) return null;
                     const cleared = s.storyCleared.includes(level);
+                    const prevCleared = level <= 1 || s.storyCleared.includes(level - 1);
                     const isCurrent = level === current.level && !cleared;
-                    const unlocked = s.level >= level;
+                    const unlocked = s.level >= level && prevCleared;
                     const state = cleared ? "cleared" : isCurrent ? "current" : unlocked ? "open" : "locked";
+                    const enterable = state === "cleared" || state === "current" || state === "open";
                     return (
                       <Tile
                         key={level}
@@ -255,7 +269,12 @@ export function JourneyTab() {
                         state={state}
                         selected={level === episode.level}
                         current={isCurrent}
-                        onClick={() => setSelected(level)}
+                        onClick={() => {
+                          setSelected(level);
+                          // Clicking an enterable tile walks straight into it; locked tiles
+                          // just open the detail panel so you can read the requirement.
+                          if (enterable && !s.dead && !s.inLockdown) open(level);
+                        }}
                       />
                     );
                   })}

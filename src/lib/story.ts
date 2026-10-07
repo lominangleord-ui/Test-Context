@@ -38,9 +38,10 @@ export interface EnemyTemplate {
 
 /**
  * Enemy stats are derived from the expected hunter at the episode's level rather
- * than hand-tuned per tile. Tuned to the economy where stat points still make
- * the hunter noticeably stronger but a baseline (auto-growth only) hunter can
- * clear tiles with the right skills.
+ * than hand-tuned per tile. Tuned to the economy where stat points (dailies and
+ * level-ups) make the hunter noticeably stronger — an investing hunter wins in
+ * about half the turns the enemy needs — while a baseline hunter who only takes
+ * auto-growth scrapes through early tiles and must spend eventually.
  */
 export function enemyFor(episode: StoryEpisode): EnemyTemplate {
   const { combat } = expectedCombat(episode.level);
@@ -141,10 +142,9 @@ export function currentEpisode(state: Pick<StoryState, "storyCleared">): StoryEp
   return target ?? STORY_EPISODES[STORY_EPISODES.length - 1];
 }
 
-export function storyTotals(cleared: number[]): { pointsSpent: number; clears: number; gold: number; spEarned: number } {
+export function storyTotals(cleared: number[]): { clears: number; gold: number; spEarned: number } {
   const episodes = STORY_EPISODES.filter((episode) => cleared.includes(episode.level));
   return {
-    pointsSpent: 0,
     clears: episodes.length,
     gold: episodes.reduce((total, episode) => total + episode.gold, 0),
     spEarned: episodes.reduce((total, ep) => total + (ep.kind === "job" ? 0 : ep.kind === "field" ? 1 : 2), 0),
@@ -183,11 +183,6 @@ export function spendSkillPoints(
   return { basicSkills: [...state.basicSkills, skill.id], sp: state.sp - skill.cost };
 }
 
-/** First unlearned node in the class tree, for story rewards that grant skills. */
-export function nextSkillReward(state: Pick<GameState, "gameClass" | "basicSkills">): BasicSkill | null {
-  return classSkills(state.gameClass).find((skill) => !skill.starter && !state.basicSkills.includes(skill.id)) ?? null;
-}
-
 /**
  * Economy guarantee: every class can own its entire kit out of SP earned
  * from the tiles available by level 30.
@@ -202,8 +197,8 @@ export function kitGuarantee(id: GameClassId): { cost: number; levelCap: number;
   return { cost, levelCap, spByLevel30, affordable: cost <= spByLevel30 && levelCap <= 30 };
 }
 
-/** Act I's SP income for balancing checks. */
-export function actOneSP(cleared: number[] = []): number {
+/** SP still obtainable in Act I (40 with nothing cleared). For balancing checks. */
+export function actOneSPRemaining(cleared: number[] = []): number {
   return STORY_EPISODES
     .filter((ep) => ep.level <= 40 && !cleared.includes(ep.level))
     .reduce((total, ep) => total + (ep.kind === "job" ? 0 : ep.kind === "field" ? 1 : 2), 0);

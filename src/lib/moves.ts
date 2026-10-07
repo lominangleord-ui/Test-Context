@@ -4,7 +4,7 @@ import type { GameState, MonarchPath, MoveLike, MoveRole, PathMove } from "../ty
 /**
  * Gate battles use a drafted moveset instead of the old single signature move.
  * Clearing a trial only unlocks the *option* to learn its move; the move itself
- * costs stat points, so every point spent here is a point not spent on STR/AGI/VIT.
+ * costs skill points (SP), the quest currency — stat points buy only STR/AGI/VIT.
  */
 
 /** Everyone owns this from the first Gate. Free, never learned, always shown. */

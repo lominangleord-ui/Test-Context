@@ -87,7 +87,7 @@ export function GateBattle() {
     str: game.str,
     agi: game.agi,
     vit: game.vit,
-    pts: game.pts,
+    pts: game.pts, sp: game.sp,
     fatigueLevel: game.fatigueLevel,
     monarchPath: game.monarchPath,
     clearedGates: game.clearedGates,
@@ -154,7 +154,7 @@ export function GateBattle() {
   const playerAtkEffective = () => Math.round(stats.atk * (1 + mods.playerAtk));
   const playerDefEffective = () => Math.round(stats.def * (1 + mods.playerDef));
   const critEffective = () => Math.min(100, stats.critChance * (1 + mods.playerCrit));
-  const unlockState = { ...state, pts: state.pts };
+  const unlockState = { ...state, pts: state.pts, sp: state.sp };
 
   const beginTurn = (msgs: string[]) => {
     setMessages(msgs);

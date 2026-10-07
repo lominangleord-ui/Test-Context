@@ -17,7 +17,7 @@ const SHADOW_ARMY = ["Igris", "Iron", "Elite Knight", "Beru", "Ashborn's Guard"]
 export function PathScreen() {
   const s = useGame(useShallow((state) => ({
     monarchPath: state.monarchPath, level: state.level,
-    str: state.str, agi: state.agi, vit: state.vit, pts: state.pts,
+    str: state.str, agi: state.agi, vit: state.vit, pts: state.pts, sp: state.sp,
     clearedGates: state.clearedGates, learnedMoves: state.learnedMoves, ascended: state.ascended,
     gateClears: state.gateClears,
     shieldCharges: state.shieldCharges,

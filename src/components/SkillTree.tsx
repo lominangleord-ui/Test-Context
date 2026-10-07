@@ -37,7 +37,7 @@ function SkillNode({
       </div>
       {onLearn && (
         <button className="sl-btn shrink-0 text-[10px] px-3" disabled={state !== "ready"} onClick={onLearn}>
-          {state === "learned" ? "LEARNED" : `LEARN · ${cost} PT`}
+          {state === "learned" ? "LEARNED" : `LEARN · ${cost} SP`}
         </button>
       )}
     </div>
@@ -56,7 +56,7 @@ function Tree({ title, accent, subtitle, children }: { title: string; accent: st
 export function SkillTreeModal() {
   const close = useUi((s) => s.closeSkillTree);
   const s = useGame(useShallow((state) => ({
-    gameClass: state.gameClass, basicSkills: state.basicSkills, level: state.level, pts: state.pts,
+    gameClass: state.gameClass, basicSkills: state.basicSkills, level: state.level, sp: state.sp,
     monarchPath: state.monarchPath, learnedMoves: state.learnedMoves, clearedGates: state.clearedGates,
     ascended: state.ascended, str: state.str, agi: state.agi, vit: state.vit,
     learnBasicSkill: state.learnBasicSkill, learnMove: state.learnMove,
@@ -74,8 +74,8 @@ export function SkillTreeModal() {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="font-mono text-[15px]" style={{ color: "var(--gold)" }}>{s.pts}</div>
-              <div className="font-sys text-[8px] tracking-[0.18em] text-[color:var(--text-dim)]">POINTS</div>
+              <div className="font-mono text-[15px]" style={{ color: "var(--cyan-bright)" }}>{s.sp}</div>
+              <div className="font-sys text-[8px] tracking-[0.18em] text-[color:var(--text-dim)]">SKILL POINTS</div>
             </div>
             <button className="sl-btn sl-btn-danger px-3 text-[10px]" onClick={close}>✕ CLOSE</button>
           </div>
@@ -85,7 +85,7 @@ export function SkillTreeModal() {
           <Tree
             title={`${hunterClass.icon} ${hunterClass.name.toUpperCase()} · CLASS KIT`}
             accent={hunterClass.color}
-            subtitle="BASIC SKILLS · ALL UNLOCKED BY LEVEL 30 · COSTS PAID IN STAT POINTS"
+            subtitle="CLASS SKILLS · ALL UNLOCKED BY LEVEL 30 · COSTS PAID IN SKILL POINTS (SP) FROM QUEST CLEARS"
           >
             {classSkills(s.gameClass).map((skill: BasicSkill) => {
               const learned = skill.starter || s.basicSkills.includes(skill.id);
@@ -112,7 +112,7 @@ export function SkillTreeModal() {
           <Tree
             title={`${path.icon} ${s.ascended ? path.monarchTitle.toUpperCase() : path.jobClass.toUpperCase()} · MONARCH PATH`}
             accent={path.color}
-            subtitle="TRIAL MOVES · ONE UNLOCKED PER GATE · FIVE MOVES, FIVE ROLES"
+            subtitle="TRIAL MOVES · ONE UNLOCKED PER GATE · FIVE MOVES, FIVE ROLES · COSTS PAID IN SKILL POINTS"
           >
             {path.moves.map((move: PathMove) => {
               const learned = s.learnedMoves.includes(move.id);
@@ -136,9 +136,9 @@ export function SkillTreeModal() {
         ) : (
           <SystemWindow title="MONARCH PATH" accent="var(--text-dim)">
             <p className="text-[12px] text-[color:var(--text-mid)] leading-relaxed">
-              Sealed until the Job Change at level 40. The Monarch path grows directly out of the
-              class you picked at Awakening — its five trial moves will extend this tree the moment
-              you accept the ceremony.
+              Sealed until the Job Change at level 40. All nine Monarch paths become freely available
+              at the Job Change ceremony — whichever you pick extends this tree with five trial moves,
+              one unlocked per Gate you clear.
             </p>
           </SystemWindow>
         )}

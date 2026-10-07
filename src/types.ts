@@ -104,14 +104,11 @@ export interface StoryEpisode {
   briefing: string;
   /** What the encounter is, in prose. */
   prose: string;
-  /** Stat points consumed to attempt it. */
-  cost: number;
   /** Multiplies the level-derived enemy stat line. */
   hpScale: number;
   atkScale: number;
   defScale: number;
-  /** Grants a free skill from the class tree when cleared, if one is unlearned. */
-  grantsSkill?: boolean;
+  /** Gold paid on first clear; SP income is derived from `kind` in lib/story. */
   gold: number;
   rewardNote: string;
 }

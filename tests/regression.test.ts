@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { ARCHETYPES, ITEMS, RANKS, SHOP_ITEMS, TITLES, computeTargets, computePenaltyTargets, rankFromLevel, rollLoot, POSE_THRESHOLDS, SQUAT_FALLBACK } from "../src/data.ts";
-import { GATE_BOSS_STATS, MONARCH_PATHS, PATH_TIERS, PATH_FLOURISH_IDS, gateTitleId, getTier } from "../src/data/monarchPaths.ts";
+import { GATE_BOSS_STATS, MONARCH_PATHS, PATH_TIERS, PATH_FLOURISH_IDS, gateTitleId, getTier, getPath } from "../src/data/monarchPaths.ts";
 import { deriveBattleStats, readinessFromFatigue, rollAttackDamage, signatureDamage } from "../src/lib/battle.ts";
 import { HUNTER_CLASSES, classKitCost, classKitLevelCap, classSkills, defaultClassFor, getClass } from "../src/data/classes.ts";
 import { STORY_BEAT_LEVELS, STORY_EPISODES, STORY_REGIONS, buildEpisode, getEpisode } from "../src/data/story.ts";
-import { currentEpisode, enemyFor, episodeAvailability, expectedCombat, forecastFight, kitGuarantee, storyTotals } from "../src/lib/story.ts";
+import { enemyFor, episodeAvailability, expectedCombat, forecastFight, kitGuarantee, storyTotals } from "../src/lib/story.ts";
 import { fatigueEarned, goldEarned, mondayKey, pathBonuses, shopCost } from "../src/lib/monarch.ts";
 import { awardXP } from "../src/lib/progression.ts";
 import { grantLoot, resolveLoot } from "../src/lib/loot.ts";
@@ -301,7 +301,7 @@ test("Rank curve gives every band its own boundary and keeps Job Change at B-Ran
   for (let index = 1; index < RANKS.length; index++) {
     assert.equal(RANKS[index].min, RANKS[index - 1].max + 1);
   }
-  assert.deepEqual([40, 54, 55, 69, 70, 89, 90, 119, 120, 9999].map(getTier), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  assert.deepEqual([40, 54, 55, 74, 75, 99, 100, 119, 120, 9999].map(getTier), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
 });
 
 test("Every rank is obtainable as a title at its own boundary level", () => {
@@ -431,7 +431,7 @@ test("Skills are bounded to the chosen path's CLEARED gates and never grant XP",
   const base = fresh({ level: 70, monarchPath: "shadows", clearedGates: [] });
   assert.equal(pathBonuses(base).goldBonus, 0);
   assert.equal(pathBonuses(base).lootLuck, 0);
-  const empowered = fresh({ level: 70, monarchPath: "shadows", clearedGates: [1, 2, 3] });
+  const empowered = fresh({ level: 80, monarchPath: "shadows", clearedGates: [1, 2, 3] });
   assert.equal(pathBonuses(empowered).fatigueResist, .08);
   assert.equal(pathBonuses(empowered).goldBonus, .06);
   assert.equal(pathBonuses(empowered).lootLuck, .08);
@@ -468,7 +468,7 @@ test("Recovery skills, expanded shop, sigils and once-per-day moves have no XP s
   useGame.getState().consumePotion();
   assert.equal(useGame.getState().fatigueLevel, 30); // full-HP potion still offers Frost recovery
 
-  reset({ level: 90, monarchPath: "beginning", clearedGates: [4], gold: 200, fatigueLevel: 80 });
+  reset({ level: 100, monarchPath: "beginning", clearedGates: [4], gold: 200, fatigueLevel: 80 });
   useGame.getState().buyItem(30);
   useGame.getState().consumeStamina();
   assert.equal(useGame.getState().fatigueLevel, 25); // 40 base + 15 Legia boost
@@ -502,39 +502,46 @@ test("Recovery skills, expanded shop, sigils and once-per-day moves have no XP s
   assert.equal(useGame.getState().xp, 0);
 });
 
-test("Gate moves cost points after a clear, are never auto-granted, and the Tier-5 move ascends", () => {
-  // Points alone are not enough: the tier's Gate must be cleared first.
-  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [], str: 40, agi: 40, vit: 45 });
+test("Gate moves cost skill points after a clear, are never auto-granted, and the Tier-5 move ascends", () => {
+  // Skill points alone are not enough: the tier's Gate must be cleared first.
+  reset({ level: 120, monarchPath: "shadows", pts: 40, sp: 40, clearedGates: [], str: 40, agi: 40, vit: 45 });
   useGame.getState().learnMove("shadows:1");
   assert.deepEqual(useGame.getState().learnedMoves, []);
-  assert.equal(useGame.getState().pts, 40);
+  assert.equal(useGame.getState().sp, 40);
 
-  // Clearing a Gate only unlocks the option; learning spends the points.
-  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [1], str: 40, agi: 40, vit: 45 });
+  // Clearing a Gate only unlocks the option; learning spends skill points, never stat points.
+  reset({ level: 120, monarchPath: "shadows", pts: 40, sp: 40, clearedGates: [1], str: 40, agi: 40, vit: 45 });
   useGame.getState().learnMove("shadows:1");
   assert.deepEqual(useGame.getState().learnedMoves, ["shadows:1"]);
-  assert.equal(useGame.getState().pts, 37);
+  assert.equal(useGame.getState().sp, 37);
+  assert.equal(useGame.getState().pts, 40, "stat points must never pay for moves");
   useGame.getState().learnMove("shadows:1");
-  assert.equal(useGame.getState().pts, 37, "a learned move charged twice");
+  assert.equal(useGame.getState().sp, 37, "a learned move charged twice");
+
+  // A Gate clear pays the move its cost back (plus the tier-1 seed), keeping the loop whole:
+  // clear → learn costs the same number of SP that the clear granted.
+  const gatePay = (tier: number) => PATH_TIERS && getPath("shadows")!.moves[tier - 1].cost + (tier === 1 ? 1 : 0);
+  assert.equal(gatePay(1), 4);
+  assert.equal(gatePay(2), 4);
 
   // Moving to another path makes its ids unlearnable and its stale entries droppable.
   useGame.getState().learnMove("frost:1");
   assert.deepEqual(useGame.getState().learnedMoves, ["shadows:1"]);
-  const foreign = normalizeSave({ name: "Test Hunter", level: 60, monarchPath: "shadows", learnedMoves: ["shadows:1", "frost:1", "garbage"] });
+  const foreign = normalizeSave({ name: "Test Hunter", level: 120, monarchPath: "shadows", learnedMoves: ["shadows:1", "frost:1", "garbage"] });
   assert.deepEqual(foreign.learnedMoves, ["shadows:1"]);
 
-  // The ultimate needs its Gate, 40 in the path's primary stat and 8 points.
-  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [5], str: 40, agi: 40, vit: 39 });
+  // The ultimate needs its Gate, 40 in the path's primary stat and 8 skill points.
+  reset({ level: 120, monarchPath: "shadows", sp: 40, clearedGates: [5], str: 40, agi: 40, vit: 39 });
   useGame.getState().learnMove("shadows:5");
   assert.equal(useGame.getState().ascended, false);
-  reset({ level: 120, monarchPath: "shadows", pts: 7, clearedGates: [5], str: 40, agi: 40, vit: 40 });
+  reset({ level: 120, monarchPath: "shadows", sp: 7, clearedGates: [5], str: 40, agi: 40, vit: 40 });
   useGame.getState().learnMove("shadows:5");
   assert.deepEqual(useGame.getState().learnedMoves, []);
 
-  reset({ level: 120, monarchPath: "shadows", pts: 40, clearedGates: [5], str: 40, agi: 40, vit: 40 });
+  reset({ level: 120, monarchPath: "shadows", sp: 40, clearedGates: [5], str: 40, agi: 40, vit: 40 });
   useGame.getState().learnMove("shadows:5");
   assert.deepEqual(useGame.getState().learnedMoves, ["shadows:5"]);
-  assert.equal(useGame.getState().pts, 32);
+  assert.equal(useGame.getState().sp, 32);
   assert.equal(useGame.getState().ascended, true);
   assert.equal(useGame.getState().ascensionFx, true);
   useGame.getState().clearAscensionFx();
@@ -593,7 +600,7 @@ test("Act I is one quest per level from 1 to 40, each with its own enemy and cos
     assert.deepEqual(episode, buildEpisode(level), "episode composition must be deterministic");
     assert.ok(episode.enemy.length > 2 && episode.title.length > 2);
     assert.ok(episode.prose.length > 40 && episode.briefing.length > 20);
-    assert.ok(episode.cost >= 1 && episode.cost <= 4);
+    assert.ok(["field", "story", "boss", "job"].includes(episode.kind));
     assert.ok(episode.gold > 0);
     assert.ok(STORY_REGIONS.some((region) => region.id === episode.region));
   }
@@ -608,12 +615,17 @@ test("Act I is one quest per level from 1 to 40, each with its own enemy and cos
   for (const level of STORY_BEAT_LEVELS) {
     if (["boss", "job"].includes(getEpisode(level)!.kind)) assert.ok(getEpisode(level)!.enemyArt);
   }
-  // Act I is payable out of three points a level, with stat points left over.
-  const spentThrough30 = STORY_EPISODES.filter((episode) => episode.level <= 30).reduce((total, episode) => total + episode.cost, 0);
-  const kit = classKitCost("fighter");
-  assert.ok(spentThrough30 + kit < 3 * 29, `act + kit (${spentThrough30 + kit}) exceeds level-30 income (${3 * 29})`);
+  // The Act pays in skill points: 48 across 40 tiles, and the level-30 cut pays
+  // every class's full kit with SP to spare. Stat points are untouched by tiles.
   const totals = storyTotals(STORY_EPISODES.map((episode) => episode.level));
   assert.equal(totals.clears, 40);
+  assert.equal(totals.spEarned, 48);
+  const spThrough30 = storyTotals(STORY_EPISODES.filter((e) => e.level <= 30).map((e) => e.level)).spEarned;
+  for (const id of ["fighter", "mage", "assassin", "ranger"] as const) {
+    assert.ok(classKitCost(id) <= spThrough30, `${id} kit (${classKitCost(id)}) exceeds SP through level 30 (${spThrough30})`);
+    assert.ok(classKitLevelCap(id) <= 30, `${id} kit must be level-reachable by 30`);
+    assert.ok(kitGuarantee(id).affordable);
+  }
 });
 
 test("Enemies are level-scaled, and every tile is winnable with the kit available at that level", () => {
@@ -636,52 +648,81 @@ test("Enemies are level-scaled, and every tile is winnable with the kit availabl
   }
 });
 
-test("Story tiles spend points, gate on level, and hand over a free skill on a beat", () => {
+test("Story tiles gate on level and previous clear, pay gold plus SP, and never touch stat points", () => {
   // Locked until the hunter's level reaches the tile.
   reset({ level: 3, pts: 20, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: [], monarchPath: null });
   const tile10 = getEpisode(10)!;
   assert.equal(episodeAvailability(useGame.getState(), tile10).status, "locked");
   assert.equal(useGame.getState().clearEpisode(10), false);
 
-  // Unlocked and affordable: clearing spends the tile's points and banks the gold.
-  reset({ level: 10, pts: 5, gold: 0, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: [], monarchPath: null });
+  // Level alone is not enough: the strict path requires the previous tile.
+  reset({ level: 10, gold: 0, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: [], monarchPath: null });
+  assert.equal(episodeAvailability(useGame.getState(), tile10).status, "locked");
+  assert.match(episodeAvailability(useGame.getState(), tile10).reason, /previous tile/);
+  assert.equal(useGame.getState().clearEpisode(10), false);
+
+  // Unlocked and walkable: clearing banks gold + SP and costs nothing to enter.
+  const through9 = Array.from({ length: 9 }, (_, i) => i + 1);
+  reset({ level: 10, gold: 0, pts: 5, sp: 0, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: through9, monarchPath: null });
   assert.equal(episodeAvailability(useGame.getState(), tile10).status, "ready");
   assert.equal(useGame.getState().clearEpisode(10), true);
-  assert.deepEqual(useGame.getState().storyCleared, [10]);
-  assert.equal(useGame.getState().pts, 5 - tile10.cost);
+  assert.deepEqual(useGame.getState().storyCleared, [...through9, 10]);
+  // A boss tile pays 2 SP.
+  assert.equal(useGame.getState().sp, 2);
   assert.equal(useGame.getState().gold, tile10.gold);
-  // A beat grants the next unlearned skill free.
-  assert.deepEqual(useGame.getState().basicSkills, ["fighter:1", "fighter:2"]);
-  // Replays cost nothing and pay nothing.
+  // Stat points are a separate system and stay exactly where they were.
+  assert.equal(useGame.getState().pts, 5);
+  // No free skills anymore: the tree is bought with SP, nothing else.
+  assert.deepEqual(useGame.getState().basicSkills, ["fighter:1"]);
+  // Replays pay nothing.
   const gold = useGame.getState().gold;
+  const sp = useGame.getState().sp;
   assert.equal(useGame.getState().clearEpisode(10), true);
   assert.equal(useGame.getState().gold, gold);
+  assert.equal(useGame.getState().sp, sp);
 
-  // No points, no entry.
-  reset({ level: 20, pts: 0, gameClass: "mage", basicSkills: ["mage:1"], storyCleared: [], monarchPath: null });
-  const tile20 = getEpisode(20)!;
-  assert.equal(episodeAvailability(useGame.getState(), tile20).status, "unaffordable");
-  assert.equal(useGame.getState().clearEpisode(20), false);
+  // A field tile pays exactly 1 SP.
+  reset({ level: 11, pts: 0, sp: 0, gameClass: "fighter", basicSkills: ["fighter:1"], storyCleared: Array.from({ length: 10 }, (_, i) => i + 1), monarchPath: null });
+  assert.equal(getEpisode(11)!.kind, "field");
+  assert.equal(useGame.getState().clearEpisode(11), true);
+  assert.equal(useGame.getState().sp, 1);
 
-  // The Job Change tile waits for the ceremony itself.
-  reset({ level: 40, pts: 9, gameClass: "ranger", basicSkills: ["ranger:1"], storyCleared: [], monarchPath: null });
+  // Zero stat points no longer locks anyone out — the old "unaffordable" gate is gone.
+  reset({ level: 20, pts: 0, sp: 0, gameClass: "mage", basicSkills: ["mage:1"], storyCleared: Array.from({ length: 19 }, (_, i) => i + 1), monarchPath: null });
+  assert.equal(episodeAvailability(useGame.getState(), getEpisode(20)!).status, "ready");
+
+  // The Job Change tile waits for the ceremony itself once the walk reaches it.
+  reset({ level: 40, pts: 0, gameClass: "ranger", basicSkills: ["ranger:1"], storyCleared: Array.from({ length: 39 }, (_, i) => i + 1), monarchPath: null });
   assert.equal(episodeAvailability(useGame.getState(), getEpisode(40)!).status, "needs-path");
-  const current = useGame.getState();
-  assert.equal(currentEpisode({ storyCleared: current.storyCleared }).level, 1);
 });
 
-test("Class skills cost points, respect their level gate, and survive a save round trip", () => {
-  reset({ level: 30, pts: 10, gameClass: "assassin", basicSkills: ["assassin:1"] });
+test("A fresh save walks into tile 1 with nothing but its starter skill", () => {
+  reset({ level: 1, gameClass: "assassin", basicSkills: ["assassin:1"], storyCleared: [], monarchPath: null });
+  assert.equal(episodeAvailability(useGame.getState(), getEpisode(1)!).status, "ready");
+  assert.equal(useGame.getState().clearEpisode(1), true);
+});
+
+test("Class skills cost skill points, respect their level gate, and survive a save round trip", () => {
+  reset({ level: 30, sp: 10, pts: 0, gameClass: "assassin", basicSkills: ["assassin:1"] });
   useGame.getState().learnBasicSkill("assassin:2");
   assert.deepEqual(useGame.getState().basicSkills, ["assassin:1", "assassin:2"]);
-  assert.equal(useGame.getState().pts, 8);
-  // Twice is not allowed, and an unknown id is ignored.
+  assert.equal(useGame.getState().sp, 8);
+  // Stat points must never be touched by the tree.
+  assert.equal(useGame.getState().pts, 0);
+  // Without SP, a level-ready node stays locked even at a high level.
+  reset({ level: 30, sp: 0, gameClass: "assassin", basicSkills: ["assassin:1"] });
   useGame.getState().learnBasicSkill("assassin:2");
-  assert.equal(useGame.getState().pts, 8);
+  assert.deepEqual(useGame.getState().basicSkills, ["assassin:1"]);
+  // Twice is not allowed, and an unknown id is ignored.
+  reset({ level: 30, sp: 10, gameClass: "assassin", basicSkills: ["assassin:1"] });
+  useGame.getState().learnBasicSkill("assassin:2");
+  const spAfter = useGame.getState().sp;
+  useGame.getState().learnBasicSkill("assassin:2");
+  assert.equal(useGame.getState().sp, spAfter);
   useGame.getState().learnBasicSkill("fighter:3");
-  assert.equal(useGame.getState().pts, 8);
+  assert.equal(useGame.getState().sp, spAfter);
   // Level gates hold even when the points are there.
-  reset({ level: 4, pts: 40, gameClass: "fighter", basicSkills: ["fighter:1"] });
+  reset({ level: 4, sp: 40, gameClass: "fighter", basicSkills: ["fighter:1"] });
   useGame.getState().learnBasicSkill("fighter:8");
   assert.deepEqual(useGame.getState().basicSkills, ["fighter:1"]);
 
@@ -696,37 +737,38 @@ test("Class skills cost points, respect their level gate, and survive a save rou
   assert.deepEqual(ahead.storyCleared, [3]);
 });
 
-test("A perfect run through Act I reaches level 30 with a full kit and points to spare", () => {
-  // Walk the act as a player would: level, spend on the tree when a node opens,
-  // clear the tile, repeat. This is the brief's "all of them by level 30" check.
+test("A perfect run through Act I reaches level 30 with a full kit bought out of tile SP", () => {
+  // Walk the act as a player would: level, clear the tile (SP income + no entry
+  // cost), spend SP on the tree when a node opens, repeat.
   const id: "fighter" | "mage" | "assassin" | "ranger" = "mage";
   const kit = classSkills(id);
-  let pts = 3; // the awakening grant, so tile 1 is affordable on day one
+  let sp = 0;
+  let pts = 3; // stat points are a separate ledger; tiles never spend them
   let learned = [kit[0].id];
   let cleared: number[] = [];
   for (let level = 1; level <= 30; level++) {
-    if (level > 1) pts += 3; // a level's pay
+    if (level > 1) pts += 3; // a level's pay, spendable only on stats
+    const episode = getEpisode(level)!;
+    assert.ok(episode.level <= level, `tile ${level} should be level-reachable on a steady walk`);
+    assert.ok(level === 1 || cleared.includes(level - 1), `tile ${level} should follow a cleared previous tile`);
+    const pay = episode.kind === "job" ? 0 : episode.kind === "field" ? 1 : 2;
+    cleared.push(level);
+    sp += pay;
     let progressed = true;
     while (progressed) {
       progressed = false;
       for (const skill of kit) {
         if (skill.starter || learned.includes(skill.id)) continue;
-        if (skill.level <= level && pts >= skill.cost) {
-          pts -= skill.cost;
+        if (skill.level <= level && sp >= skill.cost) {
+          sp -= skill.cost;
           learned.push(skill.id);
           progressed = true;
         }
       }
     }
-    const episode = getEpisode(level)!;
-    if (pts >= episode.cost) {
-      const reward = kit.find((skill) => !skill.starter && !learned.includes(skill.id));
-      pts -= episode.cost;
-      if (episode.grantsSkill && reward) learned.push(reward.id);
-      cleared.push(level);
-    }
   }
-  assert.equal(cleared.length, 30, "every tile through level 30 should be affordable");
+  assert.equal(cleared.length, 30, "every tile through level 30 should be walkable at no cost");
   assert.equal(learned.length, 8, "the hunter must own all eight nodes by level 30");
-  assert.ok(pts >= 0);
+  assert.ok(sp >= 0);
+  assert.equal(pts, 3 + 29 * 3, "stat points were never spent on the tree");
 });

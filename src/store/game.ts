@@ -31,7 +31,7 @@ const HUNTER_CLASS_IDS: GameClassId[] = ["fighter", "mage", "assassin", "ranger"
 import { findMove, moveUnlockReason, pathMoves, spendMovePoints } from "../lib/moves";
 import { classSkills, defaultClassFor, getClass } from "../data/classes";
 import { getEpisode } from "../data/story";
-import { episodeAvailability, nextSkillReward, skillLockReason, spendSkillPoints } from "../lib/story";
+import { episodeAvailability, skillLockReason, spendSkillPoints } from "../lib/story";
 import {
   PENALTY_MS,
   SAVE_KEY,
@@ -381,6 +381,26 @@ export function normalizeSave(input: unknown): GameState {
   // Transient UI flags must never survive a reload (these are on the FxState slice,
   // not GameState; they are reset in importState/hardReset/onRehydrate).
   fresh.rewardChoicePending = false;
+  // Saves written before the SP split have cleared tiles but never meted out the
+  // skill-point income those tiles owe. Retroactively grant what a full ledger of
+  // first clears would have paid, then subtract what the tree has already consumed
+  // (starter skills are free and never charged).
+  if (typeof saved.sp !== "number") {
+    const earned = fresh.storyCleared.reduce((total: number, level: number) => {
+      const ep = getEpisode(level);
+      if (!ep) return total;
+      return total + (ep.kind === "job" ? 0 : ep.kind === "field" ? 1 : 2);
+    }, 0);
+    const spentOnSkills = classSkills(fresh.gameClass)
+      .filter((skill) => !skill.starter && fresh.basicSkills.includes(skill.id))
+      .reduce((total: number, skill) => total + skill.cost, 0);
+    const spentOnMoves = pathMoves(getPath(fresh.monarchPath))
+      .filter((move) => fresh.learnedMoves.includes(move.id))
+      .reduce((total: number, move) => total + move.cost, 0);
+    fresh.sp = Math.max(0, earned - spentOnSkills - spentOnMoves);
+  } else {
+    fresh.sp = Math.max(0, Math.floor(fresh.sp));
+  }
   return fresh;
 }
 
@@ -501,20 +521,15 @@ export const useGame = create<Store>()(
           // the level-40 Job Change ceremony grants none (the first Gate pays double to seed Act II).
           const spReward = episode.kind === "job" ? 0 : episode.kind === "field" ? 1 : 2;
 
-          // Story beats hand over the next unlearned node of the class tree, so a
-          // hunter who never spends a point still finishes the act with a kit.
-          const reward = episode.grantsSkill ? nextSkillReward(s) : null;
           set({
             storyCleared: [...s.storyCleared, level].sort((a, b) => a - b),
             sp: s.sp + spReward,
             gold: s.gold + episode.gold,
-            basicSkills: reward ? [...s.basicSkills, reward.id] : s.basicSkills,
           });
           audio.questComplete();
           get().notify({
             title: `${episode.title} — cleared`,
-            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, +${spReward} skill point${spReward === 1 ? "" : "s"}.`
-              + (reward ? `<br/>Skill granted free: <b>${reward.name}</b>.` : ""),
+            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, +${spReward} skill point${spReward === 1 ? "" : "s"}.`,
             type: "System",
           });
           return true;
@@ -609,7 +624,7 @@ export const useGame = create<Store>()(
           audio.chime();
           get().notify({
             title: "Move Learned",
-            message: `<b>${move.name}</b> learned for ${move.cost} stat points.`,
+            message: `<b>${move.name}</b> learned for ${move.cost} skill point${move.cost === 1 ? "" : "s"}.`,
             type: "System",
           });
         },
