@@ -460,6 +460,42 @@ test("The weekly streak shield forgives exactly its available number of missed d
   assert.equal(useGame.getState().shieldCharges, 2);
 });
 
+test("Opening the app after days of silence pays for EVERY missed daily, even a completed one", () => {
+  const DAY = 24 * 3600000;
+  const threeAgo = todayISO(Date.now() - 3 * DAY);
+  const yesterday = todayISO(Date.now() - DAY);
+  // The classic hole: the daily was DONE on the last open day — the two silent
+  // days in between are still unclaimed midnights, and the System must react.
+  reset({ screen: "main", hp: 90, streak: 6, questDate: threeAgo, dailyDate: threeAgo, dailyCompleted: true });
+  useGame.getState().tick();
+  assert.equal(useGame.getState().penalty, true, "a 3-day gap after a completed day still penalizes");
+  assert.equal(useGame.getState().inLockdown, true);
+  assert.equal(useGame.getState().streak, 0, "the streak died with the silent days");
+  assert.equal(useGame.getState().hp, 70, "one flat 20 HP breach toll per return");
+  // Normal rhythm: completed yesterday, opened today — nothing was missed.
+  reset({ screen: "main", hp: 90, streak: 6, questDate: yesterday, dailyDate: yesterday, dailyCompleted: true });
+  useGame.getState().tick();
+  assert.equal(useGame.getState().penalty, false, "a clean day boundary must not punish");
+  assert.equal(useGame.getState().streak, 6);
+  // An unfinished last day counts itself: a single skipped daily is one miss.
+  reset({ screen: "main", hp: 90, streak: 6, questDate: yesterday, dailyDate: yesterday, dailyCompleted: false });
+  useGame.getState().tick();
+  assert.equal(useGame.getState().penalty, true, "the missed day itself must trigger the penalty");
+  // The weekly shield forgives silent days one charge each — only what it covers.
+  reset({ screen: "main", level: 120, monarchPath: "iron-body", clearedGates: [2, 5],
+    shieldCharges: 2, shieldWeek: mondayKey(), hp: 90, streak: 6,
+    questDate: threeAgo, dailyDate: threeAgo, dailyCompleted: true });
+  useGame.getState().tick();
+  assert.equal(useGame.getState().shieldCharges, 0, "both silent days were paid from the shield");
+  assert.equal(useGame.getState().penalty, false, "the shield covered every missed day");
+  assert.equal(useGame.getState().streak, 6);
+  // The accounting ignores the UI: debt accrues even if the app closed on a
+  // non-main screen — rehydrating on 'awaken' must still trigger the catch-up.
+  reset({ screen: "awaken", hp: 90, streak: 6, questDate: threeAgo, dailyDate: threeAgo, dailyCompleted: true });
+  useGame.getState().tick();
+  assert.equal(useGame.getState().penalty, true, "closing the app on another screen does not erase the debt");
+});
+
 test("Recovery skills, expanded shop, sigils and once-per-day moves have no XP shortcut", () => {
   const draft = SHOP_ITEMS.find((item) => item.kind === "stamina")!;
   assert.equal(shopCost(fresh({ level: 40, monarchPath: "white-flames", clearedGates: [1] }), draft), 24);

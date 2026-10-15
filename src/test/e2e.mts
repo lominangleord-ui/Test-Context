@@ -203,6 +203,32 @@ const a3 = episodeAvailability(freshState as any, ep3);
 assert(a3.status === 'locked' && a3.reason.includes('previous'), 'L3 locked when L2 uncleared even at L10: '+a3.reason);
 
 
+// ---- Missed-day accounting: the System remembers days the app never opened ----
+console.log('\n-- Reopening after silent days must pay every missed daily --');
+const { todayISO } = await import('/home/user/Test-Context/src/lib/utils.ts');
+const DAY_MS = 24 * 3600000;
+const threeAgo = todayISO(Date.now() - 3 * DAY_MS);
+// Scenario 1: did the quest on the LAST open day, then vanished 3 days. The two
+// silent midnights are skips — Lockdown must fire the moment the app reopens.
+useGame.setState({ screen: 'main', dead: false, questDate: threeAgo, dailyDate: threeAgo,
+  dailyCompleted: true, penalty: false, inLockdown: false, penaltyEnd: 0, shieldCharges: 0, streak: 6, hp: 90 });
+useGame.getState().tick();
+assert(useGame.getState().penalty === true, '3 silent days after a completed day still trigger the penalty');
+assert(useGame.getState().streak === 0, 'the silent days break the streak');
+assert(useGame.getState().hp < 90, 'the breach toll is paid in HP');
+// Scenario 2: clean rhythm — completed yesterday, opened today: no punishment.
+const yISO = todayISO(Date.now() - DAY_MS);
+useGame.setState({ screen: 'main', dead: false, questDate: yISO, dailyDate: yISO,
+  dailyCompleted: true, penalty: false, inLockdown: false, penaltyEnd: 0, shieldCharges: 0, streak: 6, hp: 90 });
+useGame.getState().tick();
+assert(useGame.getState().penalty === false, 'a normal next-day open is never punished');
+assert(useGame.getState().streak === 6, 'streak survives a clean day change');
+// Scenario 3: never finished the last open day and skipped two more — three misses.
+useGame.setState({ screen: 'main', dead: false, questDate: threeAgo, dailyDate: threeAgo,
+  dailyCompleted: false, penalty: false, inLockdown: false, penaltyEnd: 0, shieldCharges: 0, streak: 6, hp: 90 });
+useGame.getState().tick();
+assert(useGame.getState().penalty === true, 'an unclaimed daily must trigger on reopen');
+
 // Legacy-save backfill: a save written before the SP split has cleared tiles but
 // no sp field. normalizeSave must hand back exactly what those clears owe.
 const { normalizeSave } = await import('/home/user/Test-Context/src/store/game.ts');

@@ -1251,7 +1251,9 @@ function maybeCompleteDaily(
 // ---------- The 1-second tick: day boundary, penalty, spawns ----------
 function runTick(set: (fn: any) => void, get: () => Store) {
   let s = get();
-  if (s.screen !== "main" || s.dead) return;
+  // Dead players are frozen; everything else — including day accounting — runs
+  // regardless of which screen is open. Real time is not paused by the UI.
+  if (s.dead) return;
   const today = todayISO();
 
   const shieldMax = pathBonuses(s).shieldMax;
@@ -1261,10 +1263,18 @@ function runTick(set: (fn: any) => void, get: () => Store) {
   }
 
   // ---- Day boundary check [A.5] ----
+  // The System remembers every midnight that passed with the Daily unclaimed,
+  // not just the last day the app happened to be open. A hunter who did their
+  // quest, then vanished for three days, still skipped TWO dailies — those days
+  // must trigger the penalty on return. `missedDays` is therefore counted from
+  // the calendar gap: the open day itself is only forgiven if it was finished.
   if (s.questDate && s.questDate !== today) {
+    const gapDays = Math.max(1, Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${s.questDate}T12:00:00`)) / 86400000) || 1);
+    // A completed last day "absorbs" exactly one boundary (yesterday was done).
+    // An unfinished last day absorbs nothing — that day counts as missed too.
+    const missedDays = s.dailyCompleted ? gapDays - 1 : gapDays;
     // An unresolved penalty keeps its original deadline; a new day must not extend it.
-    if (!s.dailyCompleted && !s.penalty) {
-      const missedDays = Math.max(1, Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${s.questDate}T12:00:00`)) / 86400000) || 1);
+    if (missedDays >= 1 && !s.penalty) {
       const shieldSpent = Math.min(missedDays, s.shieldCharges);
       if (shieldSpent > 0) {
         set({ shieldCharges: s.shieldCharges - shieldSpent });
@@ -1272,7 +1282,7 @@ function runTick(set: (fn: any) => void, get: () => Store) {
           title: "Streak Shield Activated",
           message: missedDays <= shieldSpent
             ? `${shieldSpent} missed day${shieldSpent === 1 ? "" : "s"} forgiven. Streak and HP protected. Charges recharge on Monday.`
-            : `${shieldSpent} missed day${shieldSpent === 1 ? "" : "s"} forgiven, but more time passed. The remaining miss triggers Lockdown.`,
+            : `${shieldSpent} missed day${shieldSpent === 1 ? "" : "s"} forgiven, but ${missedDays - shieldSpent} went unclaimed. The rest triggers Lockdown.`,
           type: "System",
         });
       }
@@ -1280,6 +1290,11 @@ function runTick(set: (fn: any) => void, get: () => Store) {
         // The shield covers only its actual number of missed days.
         const survives = s.hp - 20 > 0;
         const penaltyTargets = computePenaltyTargets(s.getTargets());
+        get().notify({
+          title: "The System Remembers",
+          message: `${missedDays - shieldSpent} Daily Quest${missedDays - shieldSpent === 1 ? "" : "s"} missed while you were away. Penalty is in effect — complete it or lose HP.`,
+          type: "System",
+        });
         set((st: Store) => {
           // Path Gate titles are permanent; only expired streak titles disappear.
           const stillValid =
@@ -1351,8 +1366,8 @@ function runTick(set: (fn: any) => void, get: () => Store) {
   s = get();
   if (s.dead) return;
 
-  // ---- Random spawns (not during lockdown) ----
-  if (s.dailyCompleted && !s.inLockdown && !s.dead && (s.level < 40 || !!s.monarchPath) && (typeof document === "undefined" || !document.hidden)) {
+  // ---- Random spawns (not during lockdown; ambient, so main-screen only) ----
+  if (s.screen === "main" && s.dailyCompleted && !s.inLockdown && !s.dead && (s.level < 40 || !!s.monarchPath) && (typeof document === "undefined" || !document.hidden)) {
     // Dismissible, untimed Special Quests unlock after the daily work is done.
     const current = get();
     if (!current.specialActive && Math.random() < 0.02) {
