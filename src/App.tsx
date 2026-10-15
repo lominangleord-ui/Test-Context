@@ -22,6 +22,7 @@ import { AvatarPicker } from "./components/AvatarPicker";
 import { Notifications } from "./components/Notifications";
 import { AscensionFx, GateClearFx, LevelUpFx, RankUpFx } from "./components/Fx";
 import { JourneyTab } from "./components/JourneyTab";
+import { GameScreen } from "./components/GameScreen";
 import { SkillTreeModal } from "./components/SkillTree";
 import { StoryBattle } from "./components/StoryBattle";
 import { CameraOverlay } from "./components/CameraOverlay";
@@ -34,6 +35,7 @@ import { REMINDER_POLL_MS } from "./lib/reminderPolicy";
 
 const TABS = [
   { id: "quest", label: "QUEST", icon: "⚔" },
+  { id: "game", label: "DUNGEON", icon: "▩" },
   { id: "journey", label: "JOURNEY", icon: "🗺" },
   { id: "titles", label: "TITLES", icon: "◇" },
   { id: "pact", label: "PACT", icon: "🩸" },
@@ -131,6 +133,8 @@ function MainApp() {
           </div>
         </div>
       )}
+
+      {tab === "game" && <GameScreen />}
 
       {tab === "journey" && <div className="max-w-[860px] mx-auto"><JourneyTab /></div>}
 

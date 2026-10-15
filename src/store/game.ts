@@ -79,6 +79,7 @@ interface Actions {
   allocateStat: (stat: StatKey) => void;
   // economy
   buyPotion: () => void;
+  awardBattle: (sp: number, gold: number) => void;
   buyItem: (id: number) => void;
   equipItem: (id: number) => void;
   consumePotion: () => void;
@@ -753,6 +754,11 @@ export const useGame = create<Store>()(
           audio.repBeep();
         },
 
+        awardBattle: (sp, gold) => {
+          // The dungeon pays ONLY in skill points and coin — XP stays tied to the real world.
+          set((s) => ({ sp: s.sp + Math.max(0, sp), gold: s.gold + Math.max(0, gold) }));
+          if (sp > 0) get().notify({ title: "SKILL POINTS +", message: `The System credits ${sp} skill point${sp === 1 ? "" : "s"} for the kill. Spend them in the Skill Tree.`, type: "System" });
+        },
         buyPotion: () => {
           get().buyItem(31);
         },
