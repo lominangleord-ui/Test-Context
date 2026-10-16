@@ -1,16 +1,27 @@
-import type { MonarchPath, PathId, PathSkill, TierNumber } from "../types";
+import type { GameClassId, MonarchPath, PathId, PathSkill, TierNumber } from "../types";
+
+/*
+ * The nine Monarch lineages — chosen freely at the Job Change ceremony
+ * (level 40). Each class can take any of the nine paths; the four starter
+ * classes are balanced so no single path is locked to a single class.
+ *
+ * Tier floors follow the corrected public rank curve:
+ *   Tier 1 (Nascent)     B-Rank       levels 40-54
+ *   Tier 2 (Ascendant)   A-Rank       levels 55-74
+ *   Tier 3 (Dominion)    S-Rank       levels 75-99
+ *   Tier 4 (Sovereign)   National     levels 100-119
+ *   Tier 5 (Transcendent) Monarch     levels 120+
+ */
 
 export const PATH_TIERS = [
   { number: 1, name: "Nascent", min: 40, max: 54, multiplier: 1.5 },
-  { number: 2, name: "Ascendant", min: 55, max: 69, multiplier: 1.75 },
-  { number: 3, name: "Dominion", min: 70, max: 89, multiplier: 2 },
-  { number: 4, name: "Sovereign", min: 90, max: 119, multiplier: 2.5 },
+  { number: 2, name: "Ascendant", min: 55, max: 74, multiplier: 1.75 },
+  { number: 3, name: "Dominion", min: 75, max: 99, multiplier: 2 },
+  { number: 4, name: "Sovereign", min: 100, max: 119, multiplier: 2.5 },
   { number: 5, name: "Transcendent", min: 120, max: Infinity, multiplier: 3 },
 ] as const;
 
 export const GATE_BOSS_STATS = {
-  // Retuned around the stats naturally earned at each tier floor. The original
-  // values could barely hurt a level-40 hunter after automatic VIT growth.
   nascent:      { hp: 300, atk: 92, def: 50 },
   ascendant:    { hp: 500, atk: 128, def: 78 },
   dominion:     { hp: 720, atk: 166, def: 108 },
@@ -26,9 +37,21 @@ export const TIER_TO_KEY: Record<number, keyof typeof GATE_BOSS_STATS> = {
   5: "transcendent",
 };
 
+/**
+ * A reasonable default for which path each class tends toward (display only;
+ * does not lock selection). Any class can take any path at Job Change.
+ */
+export const CLASS_TO_PATH: Record<GameClassId, PathId> = {
+  fighter: "shadows",
+  mage: "destruction",
+  assassin: "fangs",
+  ranger: "frost",
+};
+
 export const MONARCH_PATHS: readonly MonarchPath[] = [
   {
     id: "shadows", name: "Shadow Monarch", monarchTitle: "Shadow Monarch", jobClass: "Necromancer", icon: "♛", color: "#a58bff", primaryStat: "vit",
+    claimVerb: "EXTRACT: ARISE",
     flavor: "You don't fight alone anymore. Raise an army from every battle you win.", signatureExercise: "squat",
     moves: [
       { id: "shadows:1", tier: 1, role: "opener", name: "Army of the Dead", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -47,6 +70,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "destruction", name: "Monarch of Destruction", monarchTitle: "Monarch of Destruction", jobClass: "Dragon Mage", icon: "△", color: "#ff6f66", primaryStat: "str",
+    claimVerb: "IMMOLATE",
     flavor: "Antares's line. You don't out-train your limits; you incinerate them.", signatureExercise: "push",
     moves: [
       { id: "destruction:1", tier: 1, role: "opener", name: "Draconification", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -65,6 +89,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "white-flames", name: "Monarch of White Flames", monarchTitle: "Monarch of White Flames", jobClass: "Pyromancer", icon: "✧", color: "#ffb180", primaryStat: "agi",
+    claimVerb: "SANCTIFY",
     flavor: "Baran's line. Burn through fatigue; forge yourself in black fire.", signatureExercise: "push",
     moves: [
       { id: "white-flames:1", tier: 1, role: "opener", name: "Hellfire Summoning", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -83,6 +108,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "fangs", name: "Monarch of Fangs", monarchTitle: "Monarch of Fangs", jobClass: "Berserker", icon: "⋇", color: "#dfac7b", primaryStat: "str",
+    claimVerb: "STAKE",
     flavor: "Rakan's line. Pack instinct; you don't quit on a hunt.", signatureExercise: "squat",
     moves: [
       { id: "fangs:1", tier: 1, role: "opener", name: "Beast Call", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -101,6 +127,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "frost", name: "Monarch of Frost", monarchTitle: "Monarch of Frost", jobClass: "Cryomancer", icon: "✳", color: "#8fdfff", primaryStat: "vit",
+    claimVerb: "ENTOMB",
     flavor: "Sillad's line. Stillness and control; the body that doesn't break.", signatureExercise: "sit",
     moves: [
       { id: "frost:1", tier: 1, role: "opener", name: "Glacial Entombment", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -119,6 +146,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "iron-body", name: "Monarch of the Iron Body", monarchTitle: "Monarch of the Iron Body", jobClass: "Juggernaut", icon: "▣", color: "#ced7e0", primaryStat: "vit",
+    claimVerb: "FORGE",
     flavor: "Tarnak's line. You are the thing that doesn't move.", signatureExercise: "squat",
     moves: [
       { id: "iron-body:1", tier: 1, role: "opener", name: "Golem Forge", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -137,6 +165,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "beginning", name: "Monarch of the Beginning", monarchTitle: "Monarch of the Beginning", jobClass: "Brawler", icon: "◆", color: "#c9ae91", primaryStat: "str",
+    claimVerb: "NAME",
     flavor: "Legia's line. Raw, primal, first-principles strength.", signatureExercise: "push",
     moves: [
       { id: "beginning:1", tier: 1, role: "opener", name: "Colossal Growth", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -155,6 +184,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "plagues", name: "Monarch of Plagues", monarchTitle: "Monarch of Plagues", jobClass: "Poison Mage", icon: "☣", color: "#8ed990", primaryStat: "agi",
+    claimVerb: "SOW",
     flavor: "Querehsha's line. Patient, relentless, everywhere at once.", signatureExercise: "sit",
     moves: [
       { id: "plagues:1", tier: 1, role: "opener", name: "Parasitic Infection", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -173,6 +203,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "transfiguration", name: "Monarch of Transfiguration", monarchTitle: "Monarch of Transfiguration", jobClass: "Illusionist", icon: "⌬", color: "#d3a1ef", primaryStat: "agi",
+    claimVerb: "FOLD",
     flavor: "Yogumunt's line. Nothing about you has to stay what it was.", signatureExercise: "sit",
     moves: [
       { id: "transfiguration:1", tier: 1, role: "opener", name: "Spatial Alteration", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -194,7 +225,13 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
 export const PATH_FLOURISH_IDS = MONARCH_PATHS.map((_, index) => 200 + index);
 
 export function getPath(id: PathId | null): MonarchPath | null {
+  if (!id) return null;
   return MONARCH_PATHS.find((path) => path.id === id) ?? null;
+}
+
+export function pathForClass(classId: GameClassId | null): MonarchPath | null {
+  if (!classId) return null;
+  return getPath(CLASS_TO_PATH[classId]);
 }
 
 export function getTier(level: number) {

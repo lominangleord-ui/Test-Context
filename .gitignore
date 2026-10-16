@@ -33,3 +33,6 @@ pnpm-debug.log*
 # Caches
 .vite/
 *.tsbuildinfo
+
+# headless screenshot harness output
+shots/

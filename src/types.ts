@@ -1,5 +1,5 @@
 export type Screen = "loading" | "intro" | "awaken" | "main";
-export type Tab = "quest" | "game" | "path" | "titles" | "pact" | "log";
+export type Tab = "quest" | "game" | "journey" | "titles" | "pact" | "log";
 export type ThemeId = "system-blue" | "penalty-red" | "shadow-purple" | "monarch-gold";
 export type ArchetypeId = "balanced" | "assassin" | "monarch" | "vanguard";
 export type ExerciseKey = "push" | "sit" | "squat" | "run";
@@ -104,14 +104,7 @@ export interface StoryEpisode {
   briefing: string;
   /** What the encounter is, in prose. */
   prose: string;
-  /** Stat points consumed to attempt it. */
-  cost: number;
-  /** Multiplies the level-derived enemy stat line. */
-  hpScale: number;
-  atkScale: number;
-  defScale: number;
-  /** Grants a free skill from the class tree when cleared, if one is unlearned. */
-  grantsSkill?: boolean;
+  /** Gold paid on first clear; SP income is derived from `kind` in lib/story. */
   gold: number;
   rewardNote: string;
 }
@@ -129,6 +122,8 @@ export interface MonarchPath {
   color: string;
   /** Drives the Tier-5 ultimate's stat requirement, split three paths per stat. */
   primaryStat: StatKey;
+  /** The claim verb this lineage speaks over a kneeling foe (post-LV40 only). */
+  claimVerb: string;
   moves: readonly [PathMove, PathMove, PathMove, PathMove, PathMove];
   tiers: readonly [PathTier, PathTier, PathTier, PathTier, PathTier];
 }
@@ -234,6 +229,8 @@ export interface GameState {
   // progression
   level: number;
   pts: number;
+  /** Skill Points: earned from clearing story episodes and Gates, spent only on the skill tree. */
+  sp: number;
   streak: number;
   hp: number;
   hpMax: number;
@@ -297,7 +294,7 @@ export interface GameState {
   clearedGates: TierNumber[];
   /** Local record of when each trial was cleared, for the Gate Log. */
   gateClears: { tier: TierNumber; date: string }[];
-  /** Move ids learned with stat points. Clearing a Gate only unlocks the option. */
+  /** Move ids learned with skill points. Clearing a Gate only unlocks the option. */
   learnedMoves: string[];
   /** True once the Tier-5 ultimate is learned and the ascension has played. */
   ascended: boolean;
