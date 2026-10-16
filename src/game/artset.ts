@@ -140,7 +140,17 @@ export class ArtSet {
   }
   /** True when the real file is what `art()` returned (drives F4 FOUND counts). */
   isReal(key: string): boolean { return !!this.canvases.get(key) && this.statuses.get(key) === "FOUND"; }
-  status(key: string): ArtStatus { return this.statuses.get(key) ?? (this.canvases.has(key) ? "FOUND" : this.pending.has(key) ? "PENDING" : "PLACEHOLDER"); }
+  status(key: string): ArtStatus {
+    return this.statuses.get(key)
+      ?? (this.canvases.has(key) ? "FOUND"
+      : this.pending.has(key) ? "PENDING"
+      : this.entries.has(key) ? "PENDING" // wired in the manifest, first request hasn't come yet
+      : "PLACEHOLDER");
+  }
+  /** Mark a key FOUND from outside the load pipeline (floor layers load via fetch/img, not
+   *  art()). Deliberately NO notify(): F4 recomputes live, and a notify here can re-enter the
+   *  floor loader from inside a render frame and starve the microtask queue. */
+  markLoaded(key: string) { this.statuses.set(key, "FOUND"); }
 
   private async resolve(key: string, label = key, kind: keyof typeof SLOT_SIZE = "prop") {
     this.pending.add(key);

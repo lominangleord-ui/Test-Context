@@ -456,7 +456,7 @@ export async function loadFloorArt(floor: Floor): Promise<void> {
   const objs = typeof fetch === "function"
     ? await fetch(file("objects", "objects.json")).then((r) => (r.ok ? r.json() : null)).catch(() => null)
     : null;
-  if (objs && typeof objs === "object") floor.objects = normalizeSave(objs as Partial<FloorSave>, floor.objects);
+  if (objs && typeof objs === "object") { floor.objects = normalizeSave(objs as Partial<FloorSave>, floor.objects); Art.markLoaded(`floor:${floor.id}:objects`); }
   floor.w = floor.objects.chunks[0] * CHUNK_U.w;
   floor.h = floor.objects.chunks[1] * CHUNK_U.h;
   const groundSingle = await img(file("ground", "ground.png"));
@@ -478,6 +478,7 @@ export async function loadFloorArt(floor: Floor): Promise<void> {
       gg.drawImage(pieces[i] as never, cx, cy, 1920, 1080); // 1:1 art px — never upscaled
     }
     floor.art.ground = g;
+    Art.markLoaded(`floor:${floor.id}:ground`);
   }
   const ov = await img(file("overlay", "overlay.png"));
   if (ov && typeof document !== "undefined") {
@@ -485,6 +486,7 @@ export async function loadFloorArt(floor: Floor): Promise<void> {
     oc.width = floor.w * ART_PER_UNIT; oc.height = floor.h * ART_PER_UNIT;
     oc.getContext("2d")!.drawImage(ov as never, 0, 0, oc.width, oc.height);
     floor.art.overlay = oc;
+    Art.markLoaded(`floor:${floor.id}:overlay`);
   }
   const cm = await img(file("collision", "collision.png"));
   if (cm && typeof document !== "undefined" && cm.width > 0) {
@@ -500,6 +502,7 @@ export async function loadFloorArt(floor: Floor): Promise<void> {
       m.cells[i / 4] = Mask.classify(d[i], d[i + 1], d[i + 2], d[i + 3]);
     }
     floor.mask = m; // if the player is now inside a wall, the view's safety net snaps them out
+    Art.markLoaded(`floor:${floor.id}:collision`);
   }
   floor.art.ready = true;
 }
