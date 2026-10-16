@@ -8,6 +8,12 @@ export interface ScriptCtx { f: WorldFlags; name: string; level: number; meta?: 
 
 const sys = (t: string): Line => ({ who: "SYSTEM", text: `[${t}]` });
 
+export const CREATION_INTRO: Line[] = [
+  { text: "The Association locker room smells of floor polish and old fear. Forty-one hooks on the far wall wear name tags. None of them are yours. Not yet." },
+  { who: "SYSTEM", text: "The mirror above the bench is the honest kind — the file for {PLAYER} has not been written. Pronouns are paperwork here, and paperwork is load-bearing: {PRON_SUBJ} {PRON_BE} whoever {PRON_SUBJ} says {PRON_REF} is, and the floors will hold {PRON_OBJ} to it." },
+  { text: "You have exactly one moment before Handler Seo starts the check-in line. Use it. Build yourself; the dungeon will try the same for you later, without the courtesy of asking." },
+];
+
 // ---------------- boot / intro ----------------
 
 export function intro(player: string): Line[] {
@@ -634,6 +640,7 @@ export function prologue(name: string): Line[] {
     { who: "SYSTEM", text: "You received one. You did not receive it because you are strong. You received it because you are the only person on the block who gets up at five every morning for no reward. That is the whole qualification." },
     { text: `The floor of your apartment is cold tile at 5:40 AM and your legs already hurt, and the text on the dark reads like it was written to make you put your shoes on anyway.` },
     ssys("[EXPEDITION AUTHORITY GRANTED. FIRST FLOOR: VERDANT RUINS. YOU WILL FIND IT DISAPPOINTING, THEN FOND, THEN LETHAL. LIKE ALL RUINS.]"),
+    ssys("[PLAYER FILE OPEN: {PLAYER}. {PRON_POSS} pronouns pending locker-room confirmation. THIS IS THE ONLY FORM YOU GET TO FILL YOURSELF.]"),
     { text: "Down the fire escape, past the police tape, the apartment block is gone. In its place: a green, breathing, ruin of one — a swallowed city street wearing moss like a family heirloom. Something in the middle is waiting to be a boss about." },
   ];
 }
@@ -679,12 +686,14 @@ export function ceremonyAnswer(yes: boolean, _f: WorldFlags): Line[] {
   if (yes) return [
     ssys("[ACCEPTED. CLASS GRANTED. …GRANTING. GRANT. …]"),
     { text: "For one full second the System hiccups, and in that second the throne room's shadow — all of it, every shadow in the hall — leans toward you like grass toward weather." },
+    { who: "SYSTEM", text: "Ledger update: {PLAYER}. {PRON_SUBJ} {PRON_BE} the monarch now, which is accounting, not royalty. The shadow files {PRON_OBJ} under itself." },
     { who: "SYSTEM", text: "The class is yours. Do not look for a crown. There is no crown. A monarch is what the dark calls the thing that kept walking. Congratulations. It is not a reward. It is a receipt." },
     { who: "SEO", text: `Seo's hands come out of her pockets. She is looking at your shadow the way people look at a house fire — from a measured distance, calculating who to call. "Candidate 12," she says, to nobody. "Said yes. Class: whatever it was. Filed under: does not exist." Then, to you: "You'll hand it back eventually. The only difference between you and me is I took forty years to notice I could."` },
     { text: "The west wall of the throne room — you could swear it was marble yesterday — is a door now. Unregistered, unlisted, unsupervised. Snow light under it." },
     ssys("[NEW DESTINATION AVAILABLE: ASHENVEIL — THE UNREGISTERED FLOOR. THE ASSOCIATION HAS NOT BEEN INFORMED. THE ASSOCIATION CANNOT BE INFORMED. THAT IS THE ENTIRE POINT OF IT.]"),
   ];
   return [
+    { who: "SYSTEM", text: "{PLAYER} declined. {PRON_SUBJ} {PRON_BE} still on the ledger, still walking, still un-classified. The System respects it the way weather respects a stubborn door." },
     { who: "SYSTEM", text: "You consider the offer for exactly as long as it took you to run this whole dungeon, which is, I note, no time at all. Declined." },
     ssys("[DECLINED. LOGGING. …LOGGED. NO PRIOR ENTRY FOR 'DECLINED' EXISTS. I AM REWRITING THE FORM. IT FEELS LIKE THE FIRST THING I HAVE EVER DONE RIGHT.]"),
     { text: "The shadows stop leaning. Kang exhales like he has been holding that breath since floor one. In the doorway, Seo is laughing — one second of it, private, the way you laugh at a joke only two people in the world know." },
@@ -749,60 +758,6 @@ export function bossAfter(id: string, f: WorldFlags, spared: boolean): Line[] {
     ssys("[FLOOR " + id.toUpperCase() + (spared ? " RESOLVED WITHOUT EXCESS. THE LEDGER MARKS IT 'CLEAN.' IT HAS A CATEGORY FOR THAT. IT LIKES THAT CATEGORY. YOU HAVE NOT ASKED WHY.]" : " CLEARED. XP UNAWARDED — SEE POLICY: LEVELS ARE EARNED UNDER THE SUN.]")),
   ];
 }
-
-// ---------- the quest tracker ----------
-/** Show the player the next shared step. Returns null when the road is their
- *  own business (route fully chosen or everything resolved). Deliberately
- *  never nags twice for the same door. */
-export function nextObjective(f: WorldFlags, regionId: string): { key: string; text: string } | null {
-  const gen = f.killsTotal >= 20 && f.bossDown["hobgoblin"] && f.bossDown["sentinel"] && f.bossDown["irontusk"];
-  const peace = f.killsTotal === 0 && f.bossDown["hobgoblin"] && f.bossDown["sentinel"] && f.bossDown["irontusk"] && (f.sparedStory["sentinel"] || f.sparedStory["irontusk"]);
-  const seen = (k: string) => !!f.trackerSeen[k];
-  const push = (key: string, text: string) => ({ key, text });
-
-  if (regionId === "verdant") {
-    if (!(f.met["seo.verdant"] > 0)) return push("v-seo", "TALK to Handler Seo at the plaza camp before doing anything dramatic.");
-    if (!(f.met["hana.verdant"] > 0)) return push("v-hana", "The survey team has not been briefed. Find HANA among the columns.");
-    if (!(f.met["roan.verdant"] > 0) && f.killsTotal < 20) return push("v-roan", "Something fawn-coloured keeps waiting for you at the east shrine.");
-    if (!f.bossDown["hobgoblin"] && f.killsTotal < 20) return push("v-boss", "The north shrine's tenant needs settling with. (You may FIGHT it. You may not need to.)");
-    if (!f.bossDown["hobgoblin"] && f.killsTotal >= 20) return push("v-boss-gen", "It knows you're coming. It stopped raking the moss. Go.");
-    if (f.bossDown["hobgoblin"] && !seen("v-exit")) return push("v-exit", "The north arch is open: SUNKEN MARSH, one floor up.");
-    return null;
-  }
-  if (regionId === "marsh") {
-    if (!(f.met["sila.marsh"] > 0)) return push("m-sila", "Ask at the stilt village for SILA. The boardwalk is safer with a smuggler's directions.");
-    if (!(f.met["reedwatcher.marsh"] > 0)) return push("m-reed", "A monk is drowning politely in the south bog. The south bog is the SW island.");
-    if (!f.bossDown["sentinel"]) return push("m-boss", "The drowned stair's idol woke up annoyed. North island, top step.");
-    if (!seen("m-exit")) return push("m-exit", "Below the village boardwalk, a ladder descends into heat. The ASHEN CAVERNS want their six years back.");
-    return null;
-  }
-  if (regionId === "caverns") {
-    if (!(f.met["kang.caverns"] > 0)) return push("c-kang", "MASTER KANG waits in the stal rooms, expecting you dead. Disappoint him in person.");
-    if (!(f.met["verity.caverns"] > 0)) return push("c-verity", "The cult of the lava hall is holding a service. Attendance is optional; listening is load-bearing.");
-    if (f.killsTotal >= 12 && !f.chainedTusk && !(f.met["verity.caverns"] > 1)) return push("c-chains", "Before the boss hall: the chains. Somebody here knows which way they strain.");
-    if (f.killsTotal >= 14 && !f.bossDown["alpha"]) return push("c-den", "The stal rooms' columns are scored at head height. Something is keeping the count, and the count includes you.");
-    if (!f.bossDown["irontusk"]) return push("c-boss", "The boss hall, far east, second lava pool. The tenant is chained. Think about that sentence.");
-    if (!seen("c-exit")) return push("c-exit", "The mine-lift at the hall's south end climbs to the MONARCH'S CITADEL. The lift was always running. That should bother you.");
-    return null;
-  }
-  if (regionId === "citadel") {
-    if (!f.bossDown["warden"]) return push("t-herald", "The Herald is waiting on the carpet to announce you. You can skip the appointment. The Warden won't.");
-    if (f.bossDown["warden"] && !f.unregistered) return push("t-ceremony", "The throne is empty and the System is standing in it. Answer what it asks.");
-    if (f.unregistered && !seen("t-door")) return push("t-door", "The west door. It leads somewhere the Association doesn't know. That is the entire recommendation.");
-    return null;
-  }
-  if (regionId === "ashenveil") {
-    if (peace) return push("a-peace", "Ashenveil keeps its own counsel now. Three voices want to hear you out — the frozen river's rabbit, the ridge's hound, the warlord at the Gate.");
-    if (gen && !(f.killsPines >= 7 && f.killsRidge >= 7)) return push("a-gen", "Two ledgers remain open in this place: the forest (7) and the ridge (7). Finish the arithmetic and it will not be arithmetic anymore.");
-    if (!f.hasKey && f.killsPines >= 7) return push("a-key", "The ridge gate wants a key. The town's inn keeps more than soup.");
-    if (!f.bossDone) return push("a-boss", "The east Gate. Whatever you have been on the way up — down here it will be asked of you again, formally.");
-    if (!f.tpDone && !f.genDone && !seen("a-end")) return push("a-end", "The town is still standing. Whatever it is now — yours, the System's, nobody's — walk it one more time.");
-    return null;
-  }
-  return null;
-}
-
-export const TRACKER_DONE: Line = { who: "SYSTEM", text: "[THE MAP HAS NO INSTRUCTIONS LEFT IN IT. EVERYTHING AHEAD IS READING.]"};
 
 // ---------- regional epilogue threads (payoffs of scenery) ----------
 export function pondLine(f: WorldFlags): Line[] {
@@ -1275,6 +1230,7 @@ for (const k of Object.keys(BOSS_EX)) (ENEMY_LINES as Record<string, unknown>)[k
 export function epilogue(f: WorldFlags): Line[] {
   const out: Line[] = [
     { text: "EPILOGUE — THE FLOORS, ONE MONTH LATER." },
+    { text: "{PLAYER} keeps walking. That is the whole epilogue and the entire point: the floors are public now, and whoever {PRON_SUBJ} is out there clearing, the block's tenants call it {PRON_POSS} morning walk." },
   ];
   if (f.sparedStory["hobgoblin"]) out.push(
     { text: "The Verdant shrine has a second rake now, and no one living knows who bought it. The Association's aerial survey of Block 9 lists the north structure as 'abandoned.' The report adds, against every style rule the department has, a lowercase sentence: 'occupied.' Grik's bowl is filled weekly by a courier who resigns from leaving names." },

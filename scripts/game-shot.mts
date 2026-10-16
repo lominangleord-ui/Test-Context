@@ -92,6 +92,7 @@ useGame.getState().awaken?.("TESTER", "balanced", "⚔", undefined);
 const g = new (AshenGame as never as new (c: unknown) => AshenGame & Record<string, never>)(canvas);
 const A = g as unknown as Record<string, () => void> & Record<string, unknown>;
 g.start();
+(A.flags as Record<string, unknown>).created = true; // legacy shots skip the locker-room mirror
 await frames(20);
 shot("01-boot");
 
@@ -359,5 +360,33 @@ for (const k of Object.keys(sprites)) {
 writeFileSync(`${SHOTS}/30-sprite-atlas.png`, atlas.toBuffer("image/png"));
 console.log("saved 30-sprite-atlas");
 
+// ---------- V3: creation, pointer, journal, art status ----------
+{
+  A.flags.created = false;
+  (A.openCreator as () => void).call(g);
+  await frames(10);
+  shot("75-creator");
+  (A.commitCreator as () => void).call(g);
+  await frames(4);
+  (A.jumpToFloor as (id: string) => void).call(g, "verdant");
+  await frames(12);
+  // objective pointer: the check-in marker + distance label
+  A.pointerOn = true;
+  await frames(6);
+  shot("76-pointer");
+  // journal
+  (A as unknown as { mode: string }).mode = "journal";
+  A.journalSel = 3;
+  await frames(4);
+  shot("77-journal");
+  (A as unknown as { mode: string }).mode = "world";
+  // F4 art status panel
+  A.artPanel = true;
+  await frames(4);
+  shot("78-art-status");
+  A.artPanel = false;
+  console.log("v3 shots done");
+}
 console.log("done. mode:", A.mode);
 process.exit(process.exitCode ?? 0);
+

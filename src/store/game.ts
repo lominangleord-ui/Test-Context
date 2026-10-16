@@ -39,6 +39,7 @@ import {
   todayISO,
 } from "../lib/utils";
 import { audio, startDrone, stopDrone, voice } from "../lib/audio";
+import { defaultAppearance, normalizeAppearance, type Appearance } from "../game/appearance";
 import { shake, flash, fct, fctBurst } from "../lib/juice";
 import { grantLoot } from "../lib/loot";
 import { awardXP } from "../lib/progression";
@@ -69,6 +70,9 @@ interface Actions {
   learnMove: (id: string) => void;
   setTab: (t: Tab) => void;
   setAvatar: (a: string) => void;
+  /** The in-game mirror creator: commits name + paper-doll look in one stroke. */
+  setLook: (name: string, ap: Appearance) => void;
+  cycleGuidance: () => void;
   // quest
   getTargets: () => Record<ExerciseKey, number>;
   getPenaltyTargets: () => PenaltyTargets;
@@ -138,6 +142,7 @@ function defaultState(): GameState {
     name: "",
     archetype: "balanced",
     avatar: "/avatars/hunter-1.jpg",
+    appearance: defaultAppearance(""),
     level: 1,
     pts: 3,
     sp: 0,
@@ -209,6 +214,7 @@ function defaultState(): GameState {
       floatingNumbers: true,
       remindersEnabled: false,
       fastMode: false,
+      guidance: "full",
     },
     pact: {
       active: false,
@@ -254,6 +260,10 @@ export function normalizeSave(input: unknown): GameState {
       (fresh.settings as unknown as Record<string, unknown>)[key] = value;
     }
   }
+
+  fresh.appearance = normalizeAppearance(saved.appearance);
+  if (typeof saved.name === "string" && saved.name && !saved.appearance) fresh.appearance.name = saved.name;
+  if (typeof fresh.appearance.name !== "string" || !fresh.appearance.name) fresh.appearance.name = typeof saved.name === "string" ? saved.name.slice(0, 14) : "";
 
   fresh.archetype = saved.archetype && Object.prototype.hasOwnProperty.call(ARCHETYPES, String(saved.archetype))
     ? saved.archetype as ArchetypeId
@@ -464,6 +474,7 @@ export const useGame = create<Store>()(
           const starter = classSkills(picked).find((skill) => skill.starter);
           set({
             name: name.trim() || "Hunter",
+            appearance: { ...defaultAppearance(name.trim() || "Hunter"), pronouns: "they" },
             archetype,
             gameClass: picked,
             basicSkills: starter ? [starter.id] : [],
@@ -653,6 +664,13 @@ export const useGame = create<Store>()(
 
         setTab: (t) => set({ tab: t }),
         setAvatar: (a) => set({ avatar: a }),
+        setLook: (name, ap) => set({ name: name.trim() || "Hunter", appearance: { ...ap, name: name.trim() || "Hunter" } }),
+        cycleGuidance: () => set((st) => ({
+          settings: {
+            ...st.settings,
+            guidance: st.settings.guidance === "full" ? "light" : st.settings.guidance === "light" ? "off" : "full",
+          },
+        })),
 
         getTargets: () => {
           const s = get();

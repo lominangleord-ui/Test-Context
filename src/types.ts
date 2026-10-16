@@ -185,6 +185,8 @@ export interface SlNotification {
 }
 
 export interface Settings {
+  /** Objective pointer guidance: FULL marker+arrow+distance, LIGHT arrow only, OFF silent. */
+  guidance: "full" | "light" | "off";
   adaptiveMode: boolean;
   hardcoreMode: boolean;
   voiceCounting: boolean;
@@ -218,6 +220,8 @@ export interface PactLedgerEntry {
   witness: string;
 }
 
+import type { Appearance } from "./game/appearance";
+
 export interface GameState {
   // meta
   screen: Screen;
@@ -225,6 +229,8 @@ export interface GameState {
   name: string;
   archetype: ArchetypeId;
   avatar: string;
+  /** The player's paper-doll look (V3 creator). Only the player uses this system. */
+  appearance: Appearance;
 
   // progression
   level: number;

@@ -1,0 +1,4 @@
+{
+  "$comment": "See ART_SPEC.md. Drop files under public/art/ and point keys at them; the game hot-swaps art with zero code changes.",
+  "assets": {}
+}

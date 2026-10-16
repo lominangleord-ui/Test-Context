@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AshenGame } from "../game/view";
+import { useGame } from "../store/game";
 import type { GameKey } from "../game/core";
 
 /**
@@ -13,6 +14,7 @@ export function GameScreen() {
   const gameRef = useRef<AshenGame | null>(null);
   const [muted, setMuted] = useState(false);
   const [ready, setReady] = useState(false);
+  const guidance = useGame((st) => st.settings.guidance);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -41,13 +43,37 @@ export function GameScreen() {
     <div className="flex flex-col items-center gap-3 pb-4" style={{ minHeight: "calc(100dvh - 96px)" }}>
       <div className="w-full max-w-[860px] flex items-center justify-between px-1">
         <span className="font-mono text-[11px] tracking-[0.3em] text-[#59708f]">EXPEDITION // BLOCK 9 — FIVE FLOORS</span>
-        <button
+        <span className="flex items-center gap-1">
+          <button
+            className="font-mono text-[11px] text-[#7fe7ff] border border-[#2c4a66] rounded px-2 py-0.5"
+            onClick={() => gameRef.current?.toggleJournal()}
+            disabled={!ready}
+          >
+            JOURNAL
+          </button>
+          <button
+            className="font-mono text-[11px] text-[#ffd88a] border border-[#2c4a66] rounded px-2 py-0.5"
+            onClick={() => gameRef.current?.openCreator()}
+            disabled={!ready}
+            title="The locker-room mirror — rework your look any time (also at Rest Points, key M)"
+          >
+            MIRROR
+          </button>
+          <button
+            className="font-mono text-[11px] text-[#9fb4d8] border border-[#2c4a66] rounded px-2 py-0.5"
+            onClick={() => useGame.getState().cycleGuidance()}
+            title="Objective pointer: FULL marker+distance · LIGHT arrow only · OFF"
+          >
+            GUIDE: {guidance.toUpperCase()}
+          </button>
+          <button
           className="font-mono text-[11px] text-[#7fe7ff] border border-[#2c4a66] rounded px-2 py-0.5"
           onClick={() => { gameRef.current?.toggleMute(); setMuted((m) => !m); }}
           disabled={!ready}
         >
           {muted ? "♪ OFF" : "♪ ON"}
         </button>
+        </span>
       </div>
       <div
         className="relative w-full max-w-[1120px]"

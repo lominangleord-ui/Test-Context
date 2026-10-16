@@ -7,6 +7,7 @@
 // WORLD SCALE: 1 world unit = 2 art px. The design view is 960x540 world units.
 // Everything here is pure math + data so the test suite can fuzz movement headless.
 import { clamp } from "./core";
+import { Art } from "./artset";
 
 export const VIEW_UX = 960; // design view, world units
 export const VIEW_UY = 540;
@@ -447,14 +448,17 @@ function img(src: string): Promise<HTMLImageElement | null> {
 }
 
 export async function loadFloorArt(floor: Floor): Promise<void> {
-  const base = `art/floors/${floor.id}/`;
+  // The manifest may retarget any floor file with no code change (art/floors/… is only the default).
+  const dir = Art.urlFor(`floor:${floor.id}:dir`);
+  const base = dir ? (dir.endsWith("/") ? dir : dir + "/") : `art/floors/${floor.id}/`;
+  const file = (part: string, fallback: string) => Art.urlFor(`floor:${floor.id}:${part}`) ?? `${base}${fallback}`;
   const objs = typeof fetch === "function"
-    ? await fetch(`${base}objects.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    ? await fetch(file("objects", "objects.json")).then((r) => (r.ok ? r.json() : null)).catch(() => null)
     : null;
   if (objs && typeof objs === "object") floor.objects = normalizeSave(objs as Partial<FloorSave>, floor.objects);
   floor.w = floor.objects.chunks[0] * CHUNK_U.w;
   floor.h = floor.objects.chunks[1] * CHUNK_U.h;
-  const groundSingle = await img(`${base}ground.png`);
+  const groundSingle = await img(file("ground", "ground.png"));
   let pieces: HTMLImageElement[] = [];
   if (!groundSingle) {
     const n = floor.objects.chunks[0] * floor.objects.chunks[1];
@@ -474,14 +478,14 @@ export async function loadFloorArt(floor: Floor): Promise<void> {
     }
     floor.art.ground = g;
   }
-  const ov = await img(`${base}overlay.png`);
+  const ov = await img(file("overlay", "overlay.png"));
   if (ov && typeof document !== "undefined") {
     const oc = document.createElement("canvas");
     oc.width = floor.w * ART_PER_UNIT; oc.height = floor.h * ART_PER_UNIT;
     oc.getContext("2d")!.drawImage(ov as never, 0, 0, oc.width, oc.height);
     floor.art.overlay = oc;
   }
-  const cm = await img(`${base}collision.png`);
+  const cm = await img(file("collision", "collision.png"));
   if (cm && typeof document !== "undefined" && cm.width > 0) {
     const c = document.createElement("canvas");
     c.width = cm.width; c.height = cm.height;

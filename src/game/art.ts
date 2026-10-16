@@ -983,6 +983,8 @@ export function lavaTile(): HTMLCanvasElement {
   ], { o: "#b3341a", L: "#f0782e", O: "#ffd88a" });
 }
 
+export const PROP_KEYS = ["inn","house","pine","dead","obelisk","gateClosed","gateOpen","stall","stall2","sign","bridge","bridgeRail","ice","portal","ash","soul","cursor","heart","star","potion","key","rabbit","hound","pillar","hut","crystal","column","brazier","throne","bones","arch","shrine","lantern","gpine","boat","pool","slab","lava","altar"];
+
 export function getProp(key: string): HTMLCanvasElement {
   if (typeof document === "undefined") return document as never;
   if (!cache) {

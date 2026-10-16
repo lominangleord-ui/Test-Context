@@ -19,17 +19,23 @@ import {
 } from "./battle";
 import {
   getNpc, signAll, ENDINGS, SHOP_INTRO, SHOP_ITEMS,
-  shopThanks, shopNoGold, gateHint, bossGateHint, WELCOME_BACK, levelUpToast,
-  prologue, regionArrive, bossGate as bossGateScript, bossAfter, ceremony as ceremonyLines, ceremonyAnswer, epilogue, nextObjective, type Line,
+  shopThanks, shopNoGold, gateHint, bossGateHint, WELCOME_BACK, levelUpToast, CREATION_INTRO,
+  prologue, regionArrive, bossGate as bossGateScript, bossAfter, ceremony as ceremonyLines, ceremonyAnswer, epilogue, type Line,
 } from "./script";
 import * as A from "./art";
 import { useGame } from "../store/game";
 import type { FloorEditor } from "./editor";
+import { Art, ArtMusic, actorKey, portraitKey, battleKey, propKey, displayName, playerPartKey } from "./artset";
+import { dollFor, invalidateDollCache, defaultAppearance, normalizeAppearance, subTokens, randomize as randomLook, cycleField, validName, CREATOR_FIELDS, COLOR_SWATCHES, SKIN_SWATCHES, HAIR_SWATCHES, ACCESSORY_NAMES, JACKET_NAMES, BUILD_NAMES, FACE_NAMES, type Appearance, type CreatorField } from "./appearance";
+import { OBJECTIVES, journalRows, defaultTracked, resolveTarget, nodeDoneEff, METRES, type ObjNode } from "./objectives";
+import { onRest, FLOOR_IDS as FLOOR_IDS_LIST } from "./world";
+import { ENEMY_LINES as EX_LINES_LIST } from "./script";
+
 
 const SAVE_KEY = "sl_ashenveil_v2";
 const TYPE_RATE = 36; // chars per second
 
-type Mode = "boot" | "intro" | "world" | "talk" | "shop" | "status" | "battle" | "over" | "ending" | "choice";
+type Mode = "boot" | "intro" | "world" | "talk" | "shop" | "status" | "battle" | "over" | "ending" | "choice" | "create" | "journal";
 
 interface Pages { lines: Line[]; idx: number; t: number; after?: () => void; pg?: number }
 
@@ -55,6 +61,20 @@ export class AshenGame {
   private warnedSolid = false;
   private hurtT = 0;
   showColl = false;
+  // --- ART V3 / objective pointer / creator ---
+  private pointerOn = true;
+  private stuckT = 0;
+  private lastTrackedId = "";
+  private hintShown = new Set<string>();
+  private pagesActor: string | null = null;
+  private journalSel = 0;
+  private journalTop = 0;
+  private artPanel = false;
+  private artScroll = 0;
+  private shadowPrev = { x: 0, y: 0 };
+  private creating: { sel: number; editing: boolean; facing: "front" | "back" | "side"; draft: Appearance } | null = null;
+  private createReturn: Mode = "world";
+  private clickHud: ((e: PointerEvent) => void) | null = null;
   editorAllowed = false;
   private editor: FloorEditor | null = null;
 
@@ -97,6 +117,19 @@ export class AshenGame {
     this.centerCam();
     void loadFloorArt(this.floor);
     if (typeof document !== "undefined") this.buildSprites();
+    // ART V3: manifest first; dev builds poll for hot-reloaded art. When any file
+    // changes, every art cache in this class is rebuilt — no code edit needed.
+    void Art.loadManifest().then(() => this.buildSprites());
+    if (this.isDevBuild()) {
+      Art.startDevReload();
+      (window as unknown as Record<string, unknown>).__art = Art; // console access in dev
+    }
+    Art.onChange(() => {
+      this.buildSprites();
+      invalidateDollCache();
+      this.battleSprites = {};
+      void loadFloorArt(this.floor);
+    });
     this.editorAllowed = (typeof import.meta !== "undefined" && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true)
       || (typeof location !== "undefined" && /[?&]editor=1/.test(location.search));
     this.keyHud = (e: KeyboardEvent) => {
@@ -115,12 +148,20 @@ export class AshenGame {
         });
         return;
       }
-      if (e.key === "t" || e.key === "T") {
-        const obj = nextObjective(this.flags, this.regionId);
-        if (obj) this.flags.trackerSeen[obj.key] = true;
+      if (e.key === "t" || e.key === "T") { this.pointerOn = !this.pointerOn; this.toastNow(this.pointerOn ? "[POINTER] ON — the floor shows you the way" : "[POINTER] OFF (T brings it back)"); }
+      if (e.key === "f4" || e.key === "F4") { e.preventDefault(); this.artPanel = !this.artPanel; this.artScroll = 0; }
+      if (e.key === "j" || e.key === "J") {
+        if (this.mode === "journal") this.mode = "world";
+        else if (this.mode === "world" || this.mode === "talk") { this.journalSel = 0; this.mode = "journal"; Sfx.open(); }
       }
+      if (e.key === "m" || e.key === "M") {
+        if (this.mode === "world" && onRest(this.floor, this.px, this.py)) this.openCreator();
+      }
+      if (this.creating && this.creating.editing) this.creatorType(e);
     };
     window.addEventListener("keydown", this.keyHud);
+    this.clickHud = (e: PointerEvent) => this.onPointer(e);
+    canvas.addEventListener("pointerdown", this.clickHud);
     // pause on tab blur: dt is ALSO capped at 50 ms, so a returning tab never
     // teleports you through a wall.
     this.visHud = () => {
@@ -160,7 +201,7 @@ export class AshenGame {
     if (this.keyHud) window.removeEventListener("keydown", this.keyHud);
     if (this.visHud) document.removeEventListener("visibilitychange", this.visHud);
     this.input.detach();
-    Sfx.stopMusic();
+    this.stopTrack();
     this.started = false;
   }
   centerCam() {
@@ -171,6 +212,8 @@ export class AshenGame {
   /** Land on a floor immediately (used by travel, the harness, and after respawn). */
   jumpToFloor(id: string, playMusic = true) {
     this.regionId = id;
+    (this.flags as { visitedFloors?: Record<string, boolean> }).visitedFloors = (this.flags as unknown as { visitedFloors: Record<string, boolean> }).visitedFloors ?? {};
+    (this.flags as unknown as { visitedFloors: Record<string, boolean> }).visitedFloors[id] = true;
     this.floor = makeFloor(id);
     this.floor.art.ground = placeholderGround(this.floor);
     const sp = this.floor.objects.spawn;
@@ -182,13 +225,26 @@ export class AshenGame {
     void loadFloorArt(this.floor);
     this.mode = "world";
     this.editor?.reloadDraftFor(id);
-    if (playMusic) Sfx.playMusic(this.floor.music);
+    if (playMusic) this.playTrack(this.floor.music);
   }
+  private isDevBuild() {
+    return (typeof import.meta !== "undefined" && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true)
+      || (typeof location !== "undefined" && /[?&](editor|artdev)=1/.test(location.search));
+  }
+  /** Music: a manifest file (music:<track>) wins over the procedural chiptune. */
+  private playTrack(track: "town" | "battle" | "boss" | "final" | "marsh" | "cave") {
+    if (isMuted() || ArtMusic.tryPlay(track)) return;
+    Sfx.playMusic(track);
+  }
+  private stopTrack() { ArtMusic.stop(); Sfx.stopMusic(); }
   /** for touch buttons in the React shell */
   virtual(k: Parameters<Input["press"]>[0], down: boolean) { this.input.press(k, down); }
+  toggleJournal() { if (this.mode === 'journal') { this.mode = 'world'; Sfx.cancel(); } else if (this.mode === 'world' || this.mode === 'talk') { this.journalSel = 0; this.mode = 'journal'; Sfx.open(); } }
   toggleMute() {
     setMuted(!isMuted());
-    if (!isMuted()) Sfx.playMusic(this.mode === "battle" && this.battle ? (this.battle.enemy.boss ? "boss" : "battle") : this.floor.music);
+    if (isMuted()) this.stopTrack();
+    else if (this.mode === "battle" && this.battle) this.playTrack(this.battle.enemy.boss ? "boss" : "battle");
+    else this.playTrack(this.floor.music);
   }
 
   private buildSprites() {
@@ -223,6 +279,16 @@ export class AshenGame {
   // ---------------- world: movement, collision, hazards, travel ----------------
   private updateWorld(dt: number) {
     if (this.editor?.open) { this.editor.update(dt); return; }
+    // stuck help: a tracked objective that has not advanced in 10 minutes gets ONE extra hint
+    const node = this.trackedNode();
+    const nid = node ? node.id + node.title : "";
+    if (nid !== this.lastTrackedId) { this.lastTrackedId = nid; this.stuckT = 0; }
+    if (node) {
+      const t = resolveTarget(node, this.floor, this.flags);
+      if (t && Math.hypot(t.x - this.px, t.y - this.py) < 100) this.stuckT = 0; // arrived: the clock resets
+      else this.stuckT += dt;
+      if (this.stuckT > 600 && !this.hintShown.has(nid)) { this.hintShown.add(nid); this.toastNow("[STUCK?] " + node.hint); }
+    }
     const inp = this.input;
     const lvl = useGame.getState().level;
     const dash = lvl >= 5 && inp.down("menu");
@@ -328,7 +394,8 @@ export class AshenGame {
     if (hit.kind === "prop" && hit.key === "rest") {
       this.flags.floorHp = this.floorPool();
       Sfx.heal();
-      this.pages = { lines: [{ text: "You sit down on the flat stone that is definitely furniture. The burn leaves your feet first, then the noise, then — eventually — the part of you that counts steps." }], idx: 0, t: 0 };
+      this.pagesActor = null;
+      this.pages = { lines: [{ text: "You sit down on the flat stone that is definitely furniture. The burn leaves your feet first, then the noise, then — eventually — the part of you that counts steps. [J] journal · [M] the camp mirror keeps your reflection until you look" }], idx: 0, t: 0 };
       this.mode = "talk";
       return;
     }
@@ -338,6 +405,7 @@ export class AshenGame {
         this.mode = "talk"; return;
       }
       Sfx.bossIntro();
+      this.pagesActor = "alpha";
       this.pages = { lines: bossGateScript("alpha", this.flags), idx: 0, t: 0, after: () => this.beginBattle("alpha", 30, true) };
       this.mode = "talk"; return;
     }
@@ -356,10 +424,13 @@ export class AshenGame {
     }
     const tree = getNpc(hit.key, ctx);
     if (tree) {
+      const who = this.floor.objects.npcs.find((n) => n.dialogue === hit.key);
+      this.pagesActor = who ? who.id : hit.key.split(".")[0];
       this.pages = { lines: tree, idx: 0, t: 0 };
       this.pageAfter = () => this.afterTalk(hit.key);
       this.mode = "talk"; Sfx.open();
     } else {
+      this.pagesActor = null;
       this.pages = { lines: signAll(hit.key, this.flags), idx: 0, t: 0 };
       this.mode = "talk"; Sfx.open();
     }
@@ -380,15 +451,17 @@ export class AshenGame {
     const to = ex.to;
     this.pendingMode = () => {
       this.jumpToFloor(to, false);
+      this.pagesActor = null;
       const lines = regionArrive(to, this.flags);
       if (lines.length) { this.pages = { lines, idx: 0, t: 0 }; this.mode = "talk"; }
-      Sfx.playMusic(this.floor.music);
+      this.playTrack(this.floor.music);
     };
   }
   private startRegionBoss() {
     const bo = this.floor.objects.boss;
     if (!bo) return;
     Sfx.bossIntro();
+    this.pagesActor = bo.id;
     this.pages = { lines: bossGateScript(bo.id, this.flags), idx: 0, t: 0, after: () => this.beginBattle(bo.id, bo.level, true) };
     this.mode = "talk";
   }
@@ -412,7 +485,7 @@ export class AshenGame {
     this.battle = null;
     this.mode = "world";
     this.encCooldown = 1.5;
-    Sfx.playMusic(this.floor.music);
+    this.playTrack(this.floor.music);
     this.pages = { lines: [{ text: "You wake at the way in. The floor carries people back the way a river carries leaves — without ceremony, and without ever quite meaning to." }], idx: 0, t: 0 };
     this.mode = "talk";
   }
@@ -456,7 +529,8 @@ export class AshenGame {
       const key = p.sprite === "gate" ? (this.flags.gateOpen ? "gateOpen" : "gateClosed") : p.sprite;
       drawList.push({ y: p.y + p.h, f: () => {
         if (this.flags.genDone && (key === "inn" || key === "house" || key === "stall" || key === "stall2")) g.globalAlpha = 0.8;
-        try { g.drawImage(A.getProp(key), ox + p.x, oy + p.y, p.w, p.h); } catch { /* unknown key */ }
+        const src = Art.isReal(propKey(key)) ? Art.art(propKey(key), key, "prop") : A.getProp(key);
+        try { g.drawImage(src as CanvasImageSource, ox + p.x, oy + p.y, p.w, p.h); } catch { /* unknown key */ }
         g.globalAlpha = 1;
       } });
     }
@@ -468,17 +542,37 @@ export class AshenGame {
       if (n.hideAfter && this.hideFlag(n.hideAfter)) continue;
       const bob = Math.floor(performance.now() / 460) % 2;
       drawList.push({ y: n.y + 14, f: () => {
-        if (n.sprite === "houndOw") { try { g.drawImage(A.getProp("hound"), ox + n.x - 16, oy + n.y - 18, 32, 20); } catch { /* harness */ } return; }
-        const img = this.sprites[`n_${n.sprite}`]?.[0];
-        if (img) g.drawImage(img, ox + n.x - img.width, oy + n.y - img.height * 2 + bob, img.width * 2, img.height * 2);
-        else { try { g.drawImage(A.getProp("sign"), ox + n.x - 11, oy + n.y - 18, 22, 18); } catch { /* harness */ } }
+        // V3: one art key per actor id — actors never share the player's sprite,
+        // and missing files render as their own labelled card, not a lookalike.
+        const facing = n.facing === "up" ? "back" : n.facing === "left" || n.facing === "right" ? "side" : "front";
+        const src = Art.art(actorKey(n.id, facing), displayName(n.id), "actor");
+        const H = 48, W = H * (src.width / Math.max(1, src.height));
+        const flip = n.facing === "left";
+        g.save();
+        g.translate(ox + n.x, oy + n.y - 10 + bob);
+        if (flip) g.scale(-1, 1);
+        g.drawImage(src as CanvasImageSource, -W / 2, -H, W, H);
+        g.restore();
       } });
     }
-    const frames = this.sprites[`p${this.dir[0].toUpperCase()}${this.dir.slice(1)}`] ?? this.sprites.pDown;
-    if (frames) {
-      const fi = this.moving ? Math.floor(this.walkT) % 2 : 0;
-      const fr = frames[fi] ?? frames[0];
-      if (fr) drawList.push({ y: this.py + 10, f: () => g.drawImage(fr, ox + this.px - fr.width, oy + this.py - fr.height * 2, fr.width * 2, fr.height * 2) });
+    { // the doll composite (creator's look) — overworld use; mirrors side→left
+      const ap = useGame.getState().appearance ?? defaultAppearance(useGame.getState().name);
+      const facing = this.dir === "up" ? "back" : this.dir === "left" || this.dir === "right" ? "side" : "front";
+      const fr = dollFor(ap, facing);
+      const bobY = this.moving ? Math.floor(this.walkT) % 2 : 0;
+      drawList.push({ y: this.py + 10, f: () => {
+        // ground shadow LAGS the sprite by one frame (a story clue — it is not yours)
+        g.globalAlpha = 0.35; g.fillStyle = "#05070d";
+        g.beginPath(); g.ellipse(ox + this.shadowPrev.x, oy + this.shadowPrev.y - 2, 12, 5, 0, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1;
+        const H = 52, W = H * (fr.width / Math.max(1, fr.height));
+        g.save();
+        g.translate(ox + this.px, oy + this.py - 2 + bobY);
+        if (this.dir === "left") g.scale(-1, 1);
+        g.drawImage(fr, -W / 2, -H, W, H);
+        g.restore();
+        this.shadowPrev.x = this.px; this.shadowPrev.y = this.py;
+      } });
     }
     drawList.sort((a, b) => a.y - b.y); // painter's order by feet: you walk BEHIND tree tops via overlay.png, in front of trunks
     for (const d of drawList) d.f();
@@ -643,9 +737,16 @@ export class AshenGame {
     const pageText = (cur.text ?? "").slice(pd.from, pd.to);
     const shown = Math.floor(p.t * TYPE_RATE);
     this.box(g, 48, VIEW_H - 150, VIEW_W - 96, 132); // the panel is fixed; the page can never clip
-    if (cur.who) drawText(g, cur.who, 68, VIEW_H - 138, 13, "#ffd88a");
-    const vis = this.wrap(pageText.slice(0, Math.max(0, shown)), 14, VIEW_W - 300).slice(0, 3);
-    vis.forEach((l, i) => drawText(g, l, 68, VIEW_H - 114 + i * 21, 14, "#ffffff"));
+    const tx0 = 68;
+    if (this.pagesActor) {
+      const mood = shown < pageText.length ? "talk" : "neutral";
+      const pt = Art.art(portraitKey(this.pagesActor, mood), displayName(this.pagesActor), "portrait");
+      const PH2 = 112, PW2 = PH2 * (pt.width / Math.max(1, pt.height));
+      g.drawImage(pt as CanvasImageSource, 58, VIEW_H - 142, PW2, PH2);
+    }
+    if (cur.who) drawText(g, subTokens(cur.who, useGame.getState().appearance), tx0 + (this.pagesActor ? 122 : 0), VIEW_H - 138, 13, "#ffd88a");
+    const vis = this.wrap(subTokens(pageText.slice(0, Math.max(0, shown)), useGame.getState().appearance), 14, VIEW_W - 300 - (this.pagesActor ? 122 : 0)).slice(0, 3);
+    vis.forEach((l, i) => drawText(g, l, tx0 + (this.pagesActor ? 122 : 0), VIEW_H - 114 + i * 21, 14, "#ffffff"));
     if (shown >= pageText.length && Math.floor(performance.now() / 300) % 2 === 0) {
       const arrow = pg < pages.length - 1 ? `\u25BC Z (${pg + 1}/${pages.length})` : "\u25BC Z";
       drawText(g, arrow, VIEW_W - 68, VIEW_H - 40, 12, "#ffffff", "right");
@@ -716,9 +817,12 @@ export class AshenGame {
         break;
       }
       case "choice": this.renderWorld(g); this.renderChoice(g); break;
+      case "journal": this.renderJournal(g); break;
+      case "create": this.renderCreate(g); break;
     }
     if (this.editor?.open) this.editor.render(g);
-    if (this.mode === "world" || this.mode === "talk") this.renderTracker(g);
+    if (this.mode === "world") this.renderPointer(g);
+    if (this.artPanel) this.renderArtStatus(g);
     if (this.transT > 0) { g.fillStyle = `rgba(0,0,0,${this.transT})`; g.fillRect(0, 0, VIEW_W, VIEW_H); }
     if (this.paused) {
       g.fillStyle = "rgba(0,0,0,0.55)"; g.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -750,22 +854,24 @@ export class AshenGame {
       return;
     }
     switch (this.mode) {
+      case "create": this.updateCreate(dt); return;
+      case "journal": this.updateJournal(dt); return;
       case "boot":
         if (this.input.pressed("confirm")) {
           Sfx.select();
-          if (this.hasSave) { this.mode = "world"; Sfx.playMusic(this.floor.music); break; }
+          if (this.hasSave) { this.mode = "world"; this.playTrack(this.floor.music); break; }
           this.pages = { lines: prologue(useGame.getState().name || "HUNTER"), idx: 0, t: 0 };
           this.mode = "intro";
         }
         break;
       case "intro": this.updatePages(dt, () => {
-        this.mode = "world"; this.flags.introDone = true;
-        Sfx.playMusic(this.floor.music);
+        this.flags.introDone = true;
+        this.afterIntro();
       }); break;
       case "choice": this.updateChoice(dt); break;
       case "talk": this.updatePages(dt, () => { this.mode = "world"; this.runPageAfter(); }); break;
       case "over": this.updatePages(dt, () => this.respawn()); break;
-      case "ending": this.updatePages(dt, () => { this.mode = "world"; Sfx.playMusic("town"); this.runEndAfter(); }); break;
+      case "ending": this.updatePages(dt, () => { this.mode = "world"; this.playTrack("town"); this.runEndAfter(); }); break;
       case "status":
         if (this.input.pressed("cancel") || this.input.pressed("menu")) { this.mode = "world"; Sfx.cancel(); }
         break;
@@ -821,7 +927,7 @@ export class AshenGame {
     this.mode = "battle";
     Sfx.stopMusic();
     const bossIds = ["kesh", "architect", "hobgoblin", "sentinel", "irontusk", "warden", "alpha"];
-    Sfx.playMusic(id === "sentry" ? "final" : isBoss || bossIds.includes(id) ? "boss" : "battle");
+    this.playTrack(id === "sentry" ? "final" : isBoss || bossIds.includes(id) ? "boss" : "battle");
   }
 
   // ---------------- battle ----------------
@@ -881,9 +987,9 @@ export class AshenGame {
   }
   private endBattle() {
     const b = this.battle;
-    if (!b || !b.result) { this.battle = null; this.mode = "world"; Sfx.playMusic("town"); return; }
+    if (!b || !b.result) { this.battle = null; this.mode = "world"; this.playTrack("town"); return; }
     const r = b.result;
-    Sfx.stopMusic();
+    this.stopTrack();
     const store = useGame.getState();
     const eid = b.enemy.id;
     if (r.outcome === "claim") {
@@ -892,7 +998,7 @@ export class AshenGame {
       store.awardBattle(r.sp, r.gold);
       this.battle = null;
       this.mode = "world";
-      Sfx.playMusic(this.floor.music);
+      this.playTrack(this.floor.music);
       return;
     }
     if (r.outcome === "win") {
@@ -974,7 +1080,7 @@ export class AshenGame {
     }
     this.mode = "world";
     this.encCooldown = 1.8;
-    Sfx.playMusic(this.floor.music);
+    this.playTrack(this.floor.music);
   }
 
   /** After a regional boss resolves (win OR spare): the Warden's floor ends
@@ -1057,8 +1163,8 @@ export class AshenGame {
     const s = useGame.getState();
     drawText(g, `SYSTEM LINK: ${s.name || "GUEST"}   LV ${s.level} (real-world)   ${isMuted() ? "MUTED [M]" : "SOUND [M]"}`, VIEW_W / 2, 246, 12, "#7fe7ff", "center");
     if (Math.floor(performance.now() / 430) % 2 === 0) drawText(g, "PRESS  Z", VIEW_W / 2, 312, 22, "#ffffff", "center");
-    drawText(g, "ARROWS/WASD move · Z confirm · X status · SHIFT dash (LV 5+) · T hide tracker hint", VIEW_W / 2, 396, 10, "#59708f", "center");
-    drawText(g, "F fullscreen · F2 floor editor (dev) · F3 collision overlay · levels earned IRL by dailies", VIEW_W / 2, 412, 10, "#59708f", "center");
+    drawText(g, "ARROWS/WASD move · Z confirm · X status · SHIFT dash (LV 5+) · J journal · T pointer on/off · M mirror (at rest)", VIEW_W / 2, 396, 10, "#59708f", "center");
+    drawText(g, "F fullscreen · J journal · T pointer · F4 art status · F2 editor (dev) · F3 collision", VIEW_W / 2, 412, 10, "#59708f", "center");
   }
   private renderIntro(g: CanvasRenderingContext2D) {
     g.fillStyle = "#000"; g.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -1067,7 +1173,7 @@ export class AshenGame {
     const cur = p.lines[p.idx];
     if (!cur) return;
     const shown = Math.floor(p.t * TYPE_RATE);
-    const lines = this.wrap((cur.text ?? "").slice(0, Math.max(0, shown)), 15, VIEW_W - 140);
+    const lines = this.wrap(subTokens((cur.text ?? "").slice(0, Math.max(0, shown)), useGame.getState().appearance), 15, VIEW_W - 140);
     lines.slice(0, 12).forEach((l, i) => drawText(g, l, 70, 90 + i * 26, 15, "#cfe0ff"));
     if (shown >= (cur.text ?? "").length) drawText(g, "▼ Z", VIEW_W - 70, VIEW_H - 30, 12, "#ffffff", "right");
   }
@@ -1083,15 +1189,369 @@ export class AshenGame {
     g.globalAlpha = 1;
     g.drawImage(A.getProp("soul"), VIEW_W / 2 - 6, VIEW_H / 2 - 30, 12, 12);
   }
-  private renderTracker(g: CanvasRenderingContext2D) {
-    const obj = nextObjective(this.flags, this.regionId);
-    if (!obj || this.flags.trackerSeen[obj.key]) return;
-    const w = Math.min(VIEW_W - 150, 10 + obj.text.length * 6.4 + 40);
-    g.fillStyle = "rgba(6,10,18,0.82)"; g.fillRect(8, 8, w, 26);
-    g.strokeStyle = "#3f6a8f"; g.lineWidth = 1; g.strokeRect(8.5, 8.5, w - 1, 25);
-    drawText(g, `◈ ${obj.text}`, 14, 15, 11, "#9fd8ff");
-    drawText(g, "[T] hide", 8 + w - 4, 15, 9, "#41546f", "right");
+  // ---------------- the pointer (objective graph UI) ----------------
+  private trackedNode(): ObjNode | null {
+    const f = this.flags;
+    const tid = (f as { trackedId?: string }).trackedId ?? "";
+    if (tid) {
+      const n = OBJECTIVES.find((x) => x.id === tid);
+      if (n && !nodeDoneEff(n, f)) return n;
+    }
+    return defaultTracked(f);
   }
+  private guidance(): "full" | "light" | "off" {
+    const v = useGame.getState().settings?.guidance;
+    return v === "light" || v === "off" ? v : "full";
+  }
+  private renderPointer(g: CanvasRenderingContext2D) {
+    if (!this.pointerOn || this.guidance() === "off") return;
+    const node = this.trackedNode();
+    if (!node) return;
+    const full = this.guidance() === "full";
+    const targets: { t: NonNullable<ReturnType<typeof resolveTarget>>; label: string }[] = [];
+    if (node.group) {
+      for (const m of OBJECTIVES.filter((x) => x.group === node.group && !nodeDoneEff(x, this.flags))) {
+        const t = resolveTarget(m, this.floor, this.flags);
+        if (t && !t.sealed) targets.push({ t, label: m.title });
+      }
+    } else {
+      const t = resolveTarget(node, this.floor, this.flags);
+      if (t) targets.push({ t, label: node.title });
+    }
+    if (!targets.length) {
+      if (full) drawText(g, node.hint, VIEW_W / 2, 132, 11, "#59708f", "center"); // way sealed; the journal knows
+      return;
+    }
+    const tt = performance.now() / 420;
+    const bob = Math.sin(tt) * 4;
+    for (const { t, label } of targets.slice(0, 2)) {
+      const px = t.x - this.cam.x, py = t.y - this.cam.y;
+      const onScreen = px > -20 && px < VIEW_W + 20 && py > -20 && py < VIEW_H + 20;
+      const dist = METRES(Math.hypot(t.x - this.px, t.y - this.py));
+      if (t.sealed) continue; // never point at a locked exit
+      if (onScreen) {
+        if (full || this.guidance() === "light") {
+          g.fillStyle = "#7fe7ff";
+          g.save(); g.translate(px, py - 30 + bob); g.rotate(Math.PI / 4);
+          g.fillRect(-5, -5, 10, 10); g.restore();
+          g.globalAlpha = 0.35; g.fillStyle = "#ffffff";
+          g.save(); g.translate(px, py - 30 + bob); g.rotate(Math.PI / 4); g.fillRect(-3, -3, 6, 6); g.restore();
+          g.globalAlpha = 1;
+          if (dist <= 10) { // arrived-ish: pulse ring
+            const r = 14 + (performance.now() / 500 % 1) * 26;
+            g.strokeStyle = "rgba(127,231,255,0.5)"; g.lineWidth = 2;
+            g.beginPath(); g.arc(px, py, r, 0, Math.PI * 2); g.stroke();
+          }
+          if (full) drawText(g, label + (t.kind === "exit" ? "  ·  " + dist + " m" : "  ·  " + dist + " m"), px, py - 46 + bob, 10, "#bfe8ff", "center");
+        }
+      } else if (this.guidance() === "light" || full) {
+        // edge arrow pointing off-screen
+        const cx = VIEW_W / 2, cy = VIEW_H / 2;
+        const ang = Math.atan2(py - cy, px - cx);
+        const ex = cx + Math.cos(ang) * (VIEW_W / 2 - 26), ey = cy + Math.sin(ang) * (VIEW_H / 2 - 26);
+        g.save(); g.translate(ex, ey); g.rotate(ang);
+        g.fillStyle = "#7fe7ff";
+        g.beginPath(); g.moveTo(10, 0); g.lineTo(-6, -7); g.lineTo(-2, 0); g.lineTo(-6, 7); g.closePath(); g.fill();
+        g.restore();
+        if (full) drawText(g, `${label}  ·  ${dist} m`, ex - Math.cos(ang) * 26, ey - Math.sin(ang) * 26 + 4, 10, "#bfe8ff", "center");
+      }
+      if (node.group && targets.length > 1 && onScreen) drawText(g, "CHOOSE", VIEW_W / 2, VIEW_H - 176, 13, "#ffd88a", "center");
+    }
+    if (full && node.hint) {
+      const w = Math.min(VIEW_W - 240, node.hint.length * 6.4 + 40);
+      drawText(g, node.hint.slice(0, 118), 12, 132, 11, "#8fa5c8");
+      void w;
+    }
+  }
+
+  // ---------------- journal (J) ----------------
+  private journalList() {
+    const f = this.flags;
+    const rows = journalRows(f);
+    const groups: { head: string; items: typeof rows }[] = [];
+    const main = rows.filter((r) => r.node.kind === "MAIN");
+    const forks = rows.filter((r) => r.node.kind === "FORK");
+    const side = rows.filter((r) => r.node.kind === "SIDE");
+    if (main.length) groups.push({ head: "MAIN", items: main });
+    if (forks.length) groups.push({ head: "FORKS — pick one; the other stays open", items: forks });
+    if (side.length) groups.push({ head: "SIDE", items: side });
+    const flat: { node: ObjNode; done: boolean; active: boolean }[] = [];
+    for (const gp of groups) for (const it of gp.items) flat.push(it);
+    return { groups, flat };
+  }
+  private updateJournal(dt: number) {
+    void dt;
+    const { flat } = this.journalList();
+    if (this.input.pressed("cancel")) { this.mode = "world"; Sfx.cancel(); return; }
+    if (this.input.pressed("down")) { this.journalSel = Math.min(flat.length - 1, this.journalSel + 1); Sfx.move(); }
+    if (this.input.pressed("up")) { this.journalSel = Math.max(0, this.journalSel - 1); Sfx.move(); }
+    if (this.input.pressed("confirm")) {
+      const row = flat[this.journalSel];
+      if (row && !row.done) {
+        const cur = (this.flags as { trackedId?: string }).trackedId ?? "";
+        (this.flags as unknown as { trackedId: string }).trackedId = cur === row.node.id ? "" : row.node.id;
+        this.stuckT = 0;
+        Sfx.select();
+      } else Sfx.error();
+    }
+  }
+  private renderJournal(g: CanvasRenderingContext2D) {
+    this.renderWorld(g);
+    this.box(g, 120, 40, VIEW_W - 240, VIEW_H - 80);
+    drawText(g, "JOURNAL \u2014 WHERE THE FLOOR STANDS", 140, 58, 15, "#ffd88a");
+    const { groups } = this.journalList();
+    type JLine = { head: boolean; text: string; right?: string; sel?: boolean; rowIdx: number };
+    const lines: JLine[] = [];
+    let row = 0;
+    const tracked = (this.flags as { trackedId?: string }).trackedId ?? "";
+    for (const gp of groups) {
+      lines.push({ head: true, text: gp.head, rowIdx: -1 });
+      for (const it of gp.items) {
+        const mark = it.done ? "\u2713" : row === this.journalSel ? "\u25B6" : "\u00b7";
+        lines.push({ head: false, rowIdx: row, sel: row === this.journalSel,
+          text: `${mark} ${it.node.title}`, right: it.node.floor.toUpperCase() + (it.done ? "" : tracked === it.node.id ? "  [TRACKED]" : "") });
+        (lines[lines.length - 1] as JLine & { col: string }).col = it.done ? "#4c5a74" : row === this.journalSel ? "#ffffff" : "#9fb4d8";
+        (lines[lines.length - 1] as JLine & { rcol: string }).rcol = it.done ? "#4c5a74" : "#6d80a8";
+        row++;
+      }
+      lines.push({ head: true, text: "", rowIdx: -2 });
+    }
+    const cap = this.journalCap();
+    let selLine = lines.findIndex((l) => l.rowIdx === this.journalSel);
+    if (selLine < 0) selLine = 0;
+    if (selLine < this.journalTop) this.journalTop = Math.max(0, selLine);
+    if (selLine >= this.journalTop + cap) this.journalTop = selLine - cap + 1;
+    const top = this.journalTop;
+    let y = 92;
+    for (let i = top; i < Math.min(lines.length, top + cap); i++) {
+      const l = lines[i] as JLine & { col?: string; rcol?: string };
+      if (l.rowIdx === -2) { y += 6; continue; }
+      if (l.head) { drawText(g, l.text, 140, y, 10, "#59708f"); y += 20; continue; }
+      drawText(g, l.text, 156, y, 13, l.col ?? "#9fb4d8");
+      drawText(g, l.right ?? "", VIEW_W - 150, y, 11, l.rcol ?? "#6d80a8", "right");
+      y += 19;
+    }
+    if (top > 0) drawText(g, "\u25B2", VIEW_W / 2, 80, 10, "#59708f", "center");
+    if (top + cap < lines.length) drawText(g, "\u25BC", VIEW_W / 2, VIEW_H - 92, 10, "#59708f", "center");
+    // "Where to?" line for the tracked item
+    const node = this.trackedNode();
+    if (node) {
+      const t = resolveTarget(node, this.floor, this.flags);
+      const where = t && !t.sealed
+        ? `${node.floor === this.floor.id ? "HERE" : "FIND THE WAY: " + node.floor.toUpperCase()} \u00b7 ${t.label} \u00b7 ${METRES(Math.hypot(t.x - this.px, t.y - this.py))} m`
+        : "the route is sealed \u2014 close this floor's business first";
+      drawText(g, "Where to?  " + where, 140, VIEW_H - 66, 12, "#7fe7ff");
+      if (tracked) drawText(g, "[Z] untrack", VIEW_W - 150, VIEW_H - 66, 10, "#59708f", "right");
+    }
+    drawText(g, "\u2191\u2193 browse · Z track · X close", 140, VIEW_H - 48, 10, "#59708f");
+  }
+  private journalCap() { return Math.max(6, Math.floor((VIEW_H - 178) / 19)); }
+
+  // ---------------- F4: ART_STATUS ----------------
+  private artInv() {
+    const actorIds = new Set<string>(["player"]);
+    const portraitIds = new Set<string>(["player"]);
+    for (const id of FLOOR_IDS_LIST) {
+      const fl = makeFloor(id);
+      for (const n of fl.objects.npcs) { actorIds.add(n.id); portraitIds.add(n.id); }
+      if (fl.objects.boss) { actorIds.add(fl.objects.boss.id); portraitIds.add(fl.objects.boss.id); }
+    }
+    const battleIds = Object.keys(EX_LINES_LIST);
+    const partKeys: string[] = [];
+    const parts: [string, number][] = [["body", 3], ["trousers", 1], ["jacket", 3], ["strap", 1], ["face", 4], ["hair", 8], ["accessory", 7]];
+    for (const [slot, v] of parts) for (let i = 0; i < v; i++) for (const f of ["front", "back", "side"]) partKeys.push(playerPartKey(slot, i, f));
+    return Art.inventory([...actorIds].sort(), [...portraitIds].sort(), battleIds, A.PROP_KEYS, [...FLOOR_IDS_LIST], partKeys);
+  }
+  private renderArtStatus(g: CanvasRenderingContext2D) {
+    this.box(g, 30, 26, VIEW_W - 60, VIEW_H - 52);
+    const rows = this.artInv();
+    const found = rows.filter((r) => Art.status(r.key) === "FOUND").length;
+    const ph = rows.filter((r) => Art.status(r.key) === "PLACEHOLDER").length;
+    drawText(g, `ART_STATUS \u2014 ${rows.length} assets: ${found} FOUND \u00b7 ${ph} PLACEHOLDER \u2014 drop files at public/<path> or edit manifest.json; dev hot-reloads in 2s`, 46, 42, 12, "#ffd88a");
+    const per = 22;
+    this.artScroll = clamp(this.artScroll, 0, Math.max(0, rows.length - per));
+    rows.slice(this.artScroll, this.artScroll + per).forEach((r, i) => {
+      const st = Art.status(r.key);
+      const col = st === "FOUND" ? "#7fff9e" : st === "PENDING" ? "#7fe7ff" : "#ff9d5c";
+      drawText(g, r.key, 46, 66 + i * 19, 11, "#cfe0ff");
+      drawText(g, r.file ?? (r.kind === "actor" ? `art/actors/${r.key.split(":")[1]}/${r.key.split(":")[2]}.png` : "—"), 470, 66 + i * 19, 10, "#59708f");
+      drawText(g, st, VIEW_W - 52, 66 + i * 19, 11, col, "right");
+    });
+    drawText(g, "\u2191\u2193 scroll \u00b7 F4 close", VIEW_W / 2, VIEW_H - 42, 10, "#59708f", "center");
+    if (this.mode === "world") { // scroll with the dpad while the panel is up
+      if (this.input.down("down")) this.artScroll += 1;
+      if (this.input.down("up")) this.artScroll -= 1;
+    }
+  }
+
+  // ---------------- character creator (canvas mode) ----------------
+  openCreator() {
+    const st = useGame.getState();
+    this.createReturn = this.mode === "journal" ? "world" : this.mode === "talk" ? "world" : this.mode;
+    this.creating = {
+      sel: 0, editing: false, facing: "front",
+      draft: normalizeAppearance({ ...defaultAppearance(st.name || ""), ...(st.appearance ?? {}) }),
+    };
+    this.mode = "create";
+    invalidateDollCache();
+    Sfx.open();
+  }
+  private creatorType(e: KeyboardEvent) {
+    const cr = this.creating;
+    if (!cr || !cr.editing) return;
+    e.preventDefault();
+    if (e.key === "Enter") { cr.editing = false; if (!validName(cr.draft.name)) cr.draft.name = "HUNTER"; Sfx.select(); return; }
+    if (e.key === "Escape") { cr.editing = false; return; }
+    if (e.key === "Backspace") { cr.draft.name = cr.draft.name.slice(0, -1); return; }
+    if (e.key.length === 1 && cr.draft.name.length < 14 && /\S?\S/.test(e.key) && e.key !== " ") { cr.draft.name += e.key; Sfx.text(); }
+    if (e.key === " " && cr.draft.name.length < 14 && cr.draft.name.length > 0) { cr.draft.name += " "; }
+  }
+  private updateCreate(dt: number) {
+    void dt;
+    const cr = this.creating;
+    if (!cr) { this.mode = "world"; return; }
+    if (cr.editing) return; // typing eats the frame
+    if (this.input.pressed("down")) { cr.sel = Math.min(CREATOR_FIELDS.length - 1, cr.sel + 1); Sfx.move(); }
+    if (this.input.pressed("up")) { cr.sel = Math.max(0, cr.sel - 1); Sfx.move(); }
+    const field = CREATOR_FIELDS[cr.sel];
+    if (this.input.pressed("left")) { if (field !== "name" && field !== "confirm") { this.creating = { ...cr, draft: cycleField(cr.draft, field, -1) }; } Sfx.move(); }
+    if (this.input.pressed("right")) { if (field !== "name" && field !== "confirm") { this.creating = { ...cr, draft: cycleField(cr.draft, field, 1) }; } Sfx.move(); }
+    if (this.input.pressed("confirm")) {
+      if (field === "name") { cr.editing = true; Sfx.open(); }
+      else if (field === "randomize") { this.creating = { ...this.creating!, draft: randomLook(Math.random), sel: 0 }; Sfx.select(); }
+      else if (field === "confirm") this.commitCreator();
+      else this.creating = { ...this.creating!, draft: cycleField(cr.draft, field, 1) };
+    }
+    if (this.input.pressed("cancel") && this.flags.created) { this.creating = null; this.mode = "world"; Sfx.cancel(); }
+  }
+  private commitCreator() {
+    const cr = this.creating!;
+    const name = validName(cr.draft.name) ? cr.draft.name.trim() : "HUNTER";
+    useGame.getState().setLook(name, cr.draft);
+    invalidateDollCache();
+    this.creating = null;
+    this.flags.created = true;
+    this.mode = this.createReturn === "create" ? "world" : this.createReturn;
+    if (this.mode !== "world") this.mode = "world";
+    Sfx.levelup();
+    this.toastNow(`[THE MIRROR AGREES] ${name.toUpperCase()} — ${cr.draft.pronouns}`);
+    if (!this.flags.introDone) { this.pages = { lines: [{ text: "You button the jacket to the chin. The System appends a line to a file no one reads: LOOK CONFIRMED. IT DOES NOT ASK TWICE." }], idx: 0, t: 0 }; this.mode = "talk"; }
+  }
+  /** intro hook: before Seo's check-in, the locker-room mirror gets one moment. */
+  private afterIntro() {
+    if (!this.flags.created) {
+      this.mode = "world";
+      this.pages = { lines: CREATION_INTRO, idx: 0, t: 0, after: () => this.openCreator() };
+      this.mode = "talk";
+    } else { this.mode = "world"; this.playTrack(this.floor.music); }
+  }
+  private renderCreate(g: CanvasRenderingContext2D) {
+    const cr = this.creating;
+    if (!cr) return;
+    g.fillStyle = "#0a0e18"; g.fillRect(0, 0, VIEW_W, VIEW_H);
+    // locker-room wash
+    g.fillStyle = "#101828"; g.fillRect(0, 0, VIEW_W, VIEW_H);
+    for (let i = 0; i < 6; i++) { g.fillStyle = i % 2 ? "#0d1522" : "#111b2c"; g.fillRect(i * 160, 0, 160, VIEW_H); }
+    drawText(g, "THE ASSOCIATION LOCKER ROOM \u2014 THE MIRROR IS HONEST TODAY", 20, 22, 13, "#ffd88a");
+    // LEFT: live preview on a plinth, facing via ←/→ on the preview
+    const ap = cr.draft;
+    const doll = dollFor(ap, cr.facing);
+    const SC = 4;
+    const dx = 200 - (doll.width * SC) / 2, dy = 372 - doll.height * SC;
+    g.fillStyle = "#0a0f1c"; g.fillRect(40, 60, 320, 340);
+    g.strokeStyle = "#2c4a66"; g.lineWidth = 2; g.strokeRect(41, 61, 318, 338); // mirror frame
+    // the preview's own shadow LAGS the facing change by a frame (the story clue)
+    g.globalAlpha = 0.4; g.fillStyle = "#000";
+    g.beginPath(); g.ellipse(200, 372, doll.width * SC * 0.36, 10, 0, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
+    g.save();
+    if (cr.facing === "back") { g.translate(400, 0); g.scale(-1, 1); }
+    g.imageSmoothingEnabled = false;
+    g.drawImage(doll, dx, dy, doll.width * SC, doll.height * SC);
+    g.restore();
+    drawText(g, `front \u00b7 back \u00b7 side \u2014 click the mirror to turn (${cr.facing})`, 200, 400, 10, "#59708f", "center");
+    // RIGHT: option rows
+    const x0 = 392, rowY = 58, rowH = 26;
+    CREATOR_FIELDS.forEach((f, i) => {
+      const y = rowY + i * rowH;
+      const sel = i === cr.sel;
+      if (sel) { g.fillStyle = "#1b2a44"; g.fillRect(x0 - 8, y - 13, VIEW_W - x0 - 20, rowH - 2); }
+      const label = f.toUpperCase();
+      drawText(g, sel ? "\u25B6 " + label : "  " + label, x0, y, 12, sel ? "#ffffff" : "#9fb4d8");
+      this.createValue(g, f, ap, x0 + 150, y, sel);
+    });
+    if (cr.editing) {
+      this.box(g, x0, rowY - 24, VIEW_W - x0 - 26, 34);
+      drawText(g, "NAME (2\u201314 characters) \u2014 type, Enter to lock, Esc to stop", x0 + 10, rowY - 14, 10, "#7fe7ff");
+      drawText(g, ">" + (ap.name || "") + (Math.floor(performance.now() / 300) % 2 ? "\u2588" : " "), x0 + 10, rowY + 4, 14, "#ffffff");
+    }
+  }
+  private createValue(g: CanvasRenderingContext2D, f: CreatorField, ap: Appearance, x: number, y: number, sel: boolean) {
+    const sw = (arr: string[], cur: string, w = 13) => {
+      arr.forEach((c, i) => {
+        g.fillStyle = c; g.fillRect(x + i * (w + 3), y - 8, w, w);
+        if (c === cur) { g.strokeStyle = "#ffffff"; g.lineWidth = 1.5; g.strokeRect(x + i * (w + 3) - 1.5, y - 9.5, w + 3, w + 3); }
+      });
+    };
+    switch (f) {
+      case "name": drawText(g, ap.name || "(unnamed)", x, y, 12, "#ffffff"); drawText(g, sel && !ap.name ? "Z: type" : "", x + 120, y, 10, "#59708f"); break;
+      case "pronouns": drawText(g, ap.pronouns + (sel ? "   \u2190/\u2192 he \u00b7 she \u00b7 they" : ""), x, y, 12, "#c9e6ff"); break;
+      case "build": drawText(g, BUILD_NAMES[ap.build], x, y, 12, "#c9e6ff"); break;
+      case "skin": sw(SKIN_SWATCHES, SKIN_SWATCHES[ap.skin]); break;
+      case "face": drawText(g, FACE_NAMES[ap.face], x, y, 12, "#c9e6ff"); break;
+      case "hair": drawText(g, `style ${ap.hair + 1}/8`, x, y, 12, "#c9e6ff"); break;
+      case "hairColor": sw(HAIR_SWATCHES, ap.hairColor); break;
+      case "streak": drawText(g, ap.streak ? "ON" : "off", x, y, 12, ap.streak ? "#7fff9e" : "#59708f"); break;
+      case "streakColor": sw(COLOR_SWATCHES.slice(0, 6), ap.streakColor, 10); break;
+      case "jacket": drawText(g, JACKET_NAMES[ap.jacket], x, y, 12, "#c9e6ff"); break;
+      case "jacketColor": sw(COLOR_SWATCHES, ap.jacketColor, 10); break;
+      case "pantsColor": sw(COLOR_SWATCHES, ap.pantsColor, 10); break;
+      case "strapColor": sw(COLOR_SWATCHES, ap.strapColor, 10); break;
+      case "accessory": drawText(g, ACCESSORY_NAMES[ap.accessory + 1], x, y, 12, "#c9e6ff"); break;
+      case "accColor": sw(COLOR_SWATCHES, ap.accColor, 10); break;
+      case "randomize": drawText(g, "\u29c3 roll a whole stranger", x, y, 12, "#ffd88a"); break;
+      case "confirm": drawText(g, this.flags.created ? "\u2713 done \u2014 back to the floor" : "\u2713 THIS ONE \u2014 step away from the mirror", x, y, 12, "#7fff9e"); break;
+    }
+  }
+  private onPointer(e: PointerEvent) {
+    const cr = this.creating;
+    if (cr) { // creator: rows, swatches, mirror-turn, buttons — keyboard stays primary, mouse/touch first-class here
+      const rect = this.canvasEl.getBoundingClientRect();
+      const sx = ((e.clientX - rect.left) / rect.width) * VIEW_W;
+      const sy = ((e.clientY - rect.top) / rect.height) * VIEW_H;
+      const rowY = 58, rowH = 26;
+      if (sx >= 392 && sy >= rowY - 14) {
+        const idx = Math.floor((sy - (rowY - 14)) / rowH);
+        if (idx >= 0 && idx < CREATOR_FIELDS.length) {
+          const f = CREATOR_FIELDS[idx];
+          cr.sel = idx;
+          if (f === "confirm") { this.commitCreator(); return; }
+          if (f === "randomize") { this.creating = { ...cr, draft: randomLook(Math.random) }; Sfx.select(); return; }
+          if (f === "name") { cr.editing = true; return; }
+          // swatch hit for color rows
+          const arr = f === "skin" ? SKIN_SWATCHES : f === "hairColor" ? HAIR_SWATCHES : f === "streakColor" ? COLOR_SWATCHES.slice(0, 6) : ["jacketColor", "pantsColor", "strapColor", "accColor"].includes(f) ? COLOR_SWATCHES : null;
+          if (arr && sy >= rowY + idx * rowH - 9 && sy <= rowY + idx * rowH + 5) {
+            const w = arr.length > 8 ? 13 : 10;
+            const ci = Math.floor((sx - 542) / (w + 3));
+            if (ci >= 0 && ci < arr.length) {
+              const d = { ...cr.draft };
+              if (f === "skin") d.skin = ci; else (d as unknown as Record<string, string>)[f] = arr[ci];
+              invalidateDollCache(); this.creating = { ...cr, draft: d }; Sfx.select(); return;
+            }
+          }
+          const dir = sx > 542 + (arr ? arr.length * 16 : 0) ? 1 : -1;
+          this.creating = { ...cr, draft: cycleField(cr.draft, f, dir as 1 | -1) }; Sfx.move();
+          return;
+        }
+      }
+      if (sx < 360 && sy < 400) { const fs = ["front", "back", "side"] as const; cr.facing = fs[(fs.indexOf(cr.facing) + 1) % 3]; Sfx.move(); }
+      return;
+    }
+    // world clicks: near an interactable, click = Z (talk/save/exit)
+    if (this.mode === "world") { this.interact(); }
+    else if (this.mode === "talk") { /* clicks advance via Z-synthesis */ }
+  }
+
   private renderChoice(g: CanvasRenderingContext2D) {
     const c = this.choice;
     if (!c) return;
@@ -1185,7 +1645,7 @@ export class AshenGame {
     g.fillStyle = grad; g.fillRect(0, 0, 640, 250);
     let es = this.battleSprites[b.enemy.id];
     if (!es) {
-      es = A.getBattleSprite(b.enemy.id);
+      es = Art.isReal(battleKey(b.enemy.id)) ? (Art.art(battleKey(b.enemy.id), b.enemy.name, "battle") as never) : A.getBattleSprite(b.enemy.id);
       this.battleSprites[b.enemy.id] = es;
     }
     if (es) {

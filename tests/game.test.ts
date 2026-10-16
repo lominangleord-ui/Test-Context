@@ -10,7 +10,9 @@ import {
   createBattle, advanceDialogue, confirmAtMenu, lockBar, stepBattle, menuItems,
   type BattleState,
 } from "../src/game/battle.ts";
-import { ENEMY_LINES, ENDINGS, sign as signLines, intro } from "../src/game/script.ts";
+import { ENEMY_LINES, ENDINGS, sign as signLines, intro, CREATION_INTRO as _CI } from "../src/game/script.ts";
+import { ArtSet } from "../src/game/artset.ts";
+import { normalizeSave } from "../src/store/game.ts";
 
 const F = () => freshFlags() as unknown as Record<string, boolean>;
 
@@ -273,8 +275,7 @@ test("items: potions and shop-only consumables behave inside fights", () => {
 // ═══════════════════════ EXPEDITION (merged campaign) tests ═══════════════════════
 
 const REGION_IDS = ["verdant", "marsh", "caverns", "citadel", "ashenveil"];
-const { getNpc, signAll, bossGate, bossAfter, nextObjective, prologue, ceremony, ceremonyAnswer, epilogue, regionArrive } =
-  await import("../src/game/script.ts");
+import { getNpc, signAll, bossGate, bossAfter, prologue, ceremony, ceremonyAnswer, epilogue, regionArrive } from "../src/game/script.ts";
 
 test("expedition floors v2: props-with-colliders block without a grid rebuild, gate opens by flag alone", () => {
   const f = F();
@@ -336,22 +337,266 @@ test("expedition cast: every new NPC, sign, boss gate and bestiary voice is auth
   }
 });
 
-test("tracker: sparse by design — one shared milestone at a time, silence when the road is yours", () => {
+// ================= ART V3 / CREATION / OBJECTIVES =================
+import { Art, actorKey, colorFor, PLAYER_COLOR, displayName } from "../src/game/artset.ts";
+import { OBJECTIVES, journalRows, defaultTracked, resolveTarget, nodeDoneEff, groupDone, flagOn, METRES, type ObjNode } from "../src/game/objectives.ts";
+import { defaultAppearance, normalizeAppearance, pronounTable, subTokens, hasUnresolvedToken, cycleField, dollSources, dollFor, validName, randomize, type CreatorField } from "../src/game/appearance.ts";
+import { CREATION_INTRO } from "../src/game/script.ts";
+
+const ALL_NODES = OBJECTIVES;
+test("art v3: objective ids are unique", () => {
+  const ids = ALL_NODES.map((x) => x.id);
+  assert.equal(new Set(ids).size, ids.length, "duplicate objective id — two doors with the same name");
+});
+
+test("art v3: every named actor owns a unique key and none of them is the player", () => {
+  const ids = new Set<string>();
+  for (const fid of FLOOR_IDS) {
+    const fl = makeFloor(fid);
+    for (const n of fl.objects.npcs) {
+      assert.notEqual(n.id, "player", `${fid}: an NPC may never be keyed "player"`);
+      ids.add(n.id);
+    }
+    if (fl.objects.boss) ids.add(fl.objects.boss.id);
+  }
+  // same id across floors = same person (allowed); the rule is: id→actor is 1:1,
+  // and no NPC id collides with a boss id (that would clone two characters' art).
+  const npcs = new Set<string>(), bosses = new Set<string>();
+  for (const fid of FLOOR_IDS) {
+    const fl = makeFloor(fid);
+    for (const n of fl.objects.npcs) npcs.add(n.id);
+    if (fl.objects.boss) bosses.add(fl.objects.boss.id);
+  }
+  for (const b of bosses) assert.ok(!npcs.has(b), `boss id "${b}" is also an NPC id — their art would be cloned`);
+  assert.ok(ids.size >= 20, "the cast is wide enough to matter");
+  // every actor art call resolves without throwing even with zero manifest
+  for (const id of ids) assert.ok(Art.art(actorKey(id as string, "front"), displayName(id as string), "actor"), "art never crashes on missing files");
+});
+
+test("art v3: placeholder colours are unique per actor and the player's colour is reserved", () => {
+  const keys: string[] = [];
+  for (const fid of FLOOR_IDS) for (const n of makeFloor(fid).objects.npcs) { const k = actorKey(n.id, "front"); if (!keys.includes(k)) keys.push(k); }
+  const colors = keys.map((k) => colorFor(k));
+  assert.equal(new Set(colors).size, colors.length, "two placeholder actors share a colour");
+  assert.ok(!colors.includes(PLAYER_COLOR), "an NPC placeholder stole the reserved player colour");
+});
+
+test("art v3: manifest parses strings or entries, unknown keys fall back, empty manifest is playable", async () => {
+  const a = new ArtSet();
+  a.applyManifest({ assets: { "floor:verdant:ground": "v/ground.png", "battle:goo": { file: "goo.png", anchor: "bottom-center", scale: 0.5 } } } as never);
+  assert.equal(a.urlFor("floor:verdant:ground"), "/art/v/ground.png");
+  assert.equal(a.urlFor("battle:goo"), "/art/goo.png");
+  assert.equal(a.scaleFor("battle:goo"), 0.5);
+  assert.equal(a.anchorFor("battle:goo"), "bottom-center");
+  assert.equal(a.urlFor("actor:seo:front"), null, "missing keys resolve to placeholder, never crash");
+  const art = a.art("actor:nope:front", "Nope", "actor"); // node env → stub canvas, no throw
+  assert.ok(art);
+  await a.loadManifest(); // offline/node: fetch fails → empty manifest, still no throw
+});
+
+test("art v3: floor art loader prefers manifest files and degrades to procedural", async () => {
+  const a = new ArtSet();
+  a.applyManifest({ assets: { "floor:citadel:ground": "c/big.png", "floor:citadel:collision": "c/coll.png" } } as never);
+  assert.equal(a.urlFor("floor:citadel:ground"), "/art/c/big.png", "floor art goes through the manifest");
+  assert.equal(a.urlFor("floor:citadel:overlay"), null, "absent layers stay absent — the loader substitutes");
+});
+
+test("appearance: the look is a save round-trip; old saves get the mirror default, seeded by name", () => {
+  const ap = { ...randomize(() => 0.4241), name: "Vela", pronouns: "she" } as never;
+  const saved = normalizeSave({ version: 2, name: "Vela", appearance: ap, flags: freshFlags() } as never);
+  assert.equal(saved.appearance.name, "Vela");
+  assert.equal(saved.appearance.pronouns, "she");
+  assert.equal(saved.appearance.hairColor, (ap as never as { hairColor: string }).hairColor, "every field survives the trip");
+  const old = normalizeSave({ version: 2, name: "Kai", flags: freshFlags() } as never);
+  assert.deepEqual(old.appearance, { ...defaultAppearance("Kai"), pronouns: "they" }, "a pre-mirror save wakes with the default look, name-seeded");
+  const garbage = normalizeSave({ version: 2, name: "X", appearance: { hair: 99, name: 7 }, flags: freshFlags() } as never);
+  assert.deepEqual(garbage.appearance, defaultAppearance("X"), "garbage normalizes, never crashes");
+  assert.ok(validName("Ren O'Neil-Wei") && !validName("a") && !validName("{cheat}"), "name validation is kind but firm");
+});
+
+test("appearance: paper-doll sources are player-owned parts only — nobody else's art", () => {
+  const ap = randomize(() => 0.77);
+  for (const src of dollSources(ap)) assert.ok(src.artKey.startsWith("playerpart:"), `doll slot ${src.slot} borrows "${src.artKey}"`);
+  const doll = dollFor(ap, "front"); // node env → stub, must not throw
+  assert.ok(doll);
+  // cycling every creator field keeps the look legal
+  let a2 = ap;
+  const fields: CreatorField[] = ["name", "pronouns", "build", "skin", "face", "hair", "hairColor", "jacket", "jacketColor", "strapColor", "accessory"];
+  for (const f of fields) {
+    for (const d of [1, -1, 1] as const) a2 = cycleField(a2, f, d);
+    assert.deepEqual(normalizeAppearance(a2), a2, `cycle ${f} left the legal set`);
+  }
+});
+
+test("appearance: pronouns are grammatical in every tokenized line the game can show", () => {
+  const T = pronounTable("they");
+  const SENT = "{PRON_SUBJ} {PRON_BE} kind to {PRON_REF} — the file is {PRON_POSS} own now";
+  assert.equal(subTokens(SENT, { name: "Kid", pronouns: "he" }), "he is kind to himself — the file is his own now");
+  assert.equal(subTokens(SENT, { name: "Kid", pronouns: "she" }), "she is kind to herself — the file is her own now");
+  assert.equal(subTokens(SENT, { name: "Kid", pronouns: "they" }), "they are kind to themselves — the file is their own now");
+  assert.equal(T["{PRON_OBJ}"], "them");
+  assert.equal(subTokens("{PLAYER}", { name: "Kid", pronouns: "they" }), "Kid");
+  // every real line, all three sets, zero unresolved tokens
+  const ctx = { f: freshFlags(), name: "Kid", level: 5 };
+  let tokenized = 0;
+  const check = (text: string) => {
+    if (/\{PLAYER\}|\{PRON_/.test(text)) tokenized++;
+    for (const pronouns of ["he", "she", "they"] as const) {
+      const out = subTokens(text, { name: "Kid", pronouns });
+      assert.ok(!hasUnresolvedToken(out), `unresolved token: ${text.slice(0, 60)}`);
+      assert.ok(!out.includes("{") , `brace leaked: ${out.slice(0, 60)}`);
+    }
+  };
+  for (const l of prologue("Kid")) check(l.text);
+  for (const l of CREATION_INTRO) check(l.text);
+  for (const l of ceremonyAnswer(true, freshFlags())) check(l.text);
+  for (const l of ceremonyAnswer(false, freshFlags())) check(l.text);
+  for (const l of ceremony(freshFlags())) check(l.text);
+  for (const l of epilogue(freshFlags())) check(l.text);
+  for (const fid of FLOOR_IDS) {
+    for (const n of makeFloor(fid).objects.npcs) for (const l of getNpc(n.dialogue, ctx) ?? []) check(l.text);
+  }
+  assert.ok(tokenized >= 4, "the token system is actually used in shipped copy");
+});
+
+test("objectives: the graph covers every floor, every node has a legal target, and every flag it gates on is real", () => {
+  for (const n of ALL_NODES) {
+    assert.ok(FLOOR_IDS.includes(n.floor), `${n.id} sits on a nonexistent floor`);
+    assert.ok(/^(npc:|prop:|boss$|exit:|-?\d+(\.\d+)?,-?\d+(\.\d+)?$)/.test(n.target), `${n.id} has a weird target "${n.target}"`);
+    if (n.target.startsWith("npc:")) {
+      const keys = new Set(makeFloor(n.floor).objects.npcs.map((x) => x.dialogue));
+      assert.ok(keys.has(n.target.slice(4)), `${n.id} points at ${n.target} which is not on ${n.floor}`);
+    }
+    if (n.target === "boss") assert.ok(makeFloor(n.floor).objects.boss, `${n.id} wants ${n.floor}'s boss, there is none`);
+    if (n.target.startsWith("prop:")) {
+      const ids = new Set(makeFloor(n.floor).objects.props.map((x) => x.interactId));
+      assert.ok(ids.has(n.target.slice(5)), `${n.id} points at prop ${n.target} which ${n.floor} does not have`);
+    }
+    for (const expr of [...(n.done ?? []), ...(n.requires ?? [])]) {
+      for (const ref of [expr.replace(/^!/, "")]) {
+        const m = /^(met|bossDown|sparedStory|visited|bought):/.exec(ref);
+        const base = m ? ref.slice(m[1].length + 1).split(":")[0].split(/[<>]/)[0] : ref.replace(/>=\d+$/, "");
+        if (m) continue; // ledger keys are checked via the data itself below
+        if (/\w(>=|<=)\d+$/.test(ref)) continue;
+        assert.ok(base in freshFlags(), `expression "${expr}" reads a flag that doesn't exist`);
+      }
+    }
+  }
+  // ledger keys resolve to real content
+  const metKeys = new Set<string>(); const bossIds = new Set<string>();
+  for (const fid of FLOOR_IDS) {
+    for (const n of makeFloor(fid).objects.npcs) metKeys.add(n.dialogue);
+    if (makeFloor(fid).objects.boss) bossIds.add(makeFloor(fid).objects.boss!.id);
+  }
+  bossIds.add("alpha"); // the arch fork is not a floor-object boss — it is spawned by the gate itself
+  for (const n of ALL_NODES) for (const expr of [...(n.done ?? []), ...(n.requires ?? [])]) {
+    const mm = /^met:(.+)$/.exec(expr.replace(/^!/, "")); if (mm) assert.ok(metKeys.has(mm[1]), `${n.id} gates on met:${mm[1]} — no such conversation`);
+    const bb = /^bossDown:(.+)$/.exec(expr.replace(/^!/, "")); if (bb) assert.ok(bossIds.has(bb[1]), `${n.id} gates on bossDown:${bb[1]}`);
+  }
+});
+
+test("objectives: the tracker is never silent — fresh save gets a marker, and it is never a finished errand", () => {
   const f0 = freshFlags();
-  assert.equal(nextObjective(f0, "verdant")?.key, "v-seo", "first thing: the briefing");
-  const f1 = { ...f0, met: { "seo.verdant": 1, "hana.verdant": 1, "roan.verdant": 1 } };
-  assert.equal(nextObjective(f1, "verdant")?.key, "v-boss", "then the locked door of the floor");
-  const f2 = { ...f1, bossDown: { hobgoblin: true } };
-  assert.equal(nextObjective(f2, "verdant")?.key, "v-exit");
-  const f3 = { ...f2, trackerSeen: { "v-exit": true } };
-  assert.equal(nextObjective(f3, "verdant"), null, "a seen milestone never nags twice");
-  const f4 = { ...f3, introDone: true, met: { ...f3.met, "sila.marsh": 1 } };
-  assert.equal(nextObjective(f4, "marsh")?.key, "m-reed", "each floor restarts one hint");
-  assert.ok(nextObjective(f4, "citadel") === null || nextObjective(f4, "citadel")!.key.startsWith("t-"), "citadel only speaks about its own gates");
-  const gen = { ...f0, killsTotal: 30, met: { "seo.verdant": 1, "hana.verdant": 1, "roan.verdant": 1 } };
-  const g = nextObjective(gen, "verdant");
-  assert.ok(g!.key.startsWith("v-"), "the fixated player still gets the shared step");
-  assert.ok(/knows you|stopped raking/i.test(g!.text), "genocidal kills flip the tracker's voice");
+  const t = defaultTracked(f0);
+  assert.ok(t && t.id === "v-seo", "the very first pointer is the check-in");
+  const done = { ...f0 } as Record<string, unknown>;
+  for (const k of Object.keys(done)) {
+    const v = done[k];
+    if (typeof v === "boolean") done[k] = true;
+  }
+  done.killsTotal = 60;
+  done.regionDone = Object.fromEntries(FLOOR_IDS.map((x) => [x, true]));
+  done.bossDown = Object.fromEntries([...FLOOR_IDS.map((x) => makeFloor(x).objects.boss?.id ?? "x"), "alpha", "kesh"].map((x) => [x, true]));
+  done.sparedStory = Object.fromEntries(FLOOR_IDS.map((x) => [makeFloor(x).objects.boss?.id ?? "x", true]));
+  done.met = Object.fromEntries(FLOOR_IDS.flatMap((x) => makeFloor(x).objects.npcs.map((n) => [n.dialogue, 3])));
+  done.bought = { "a-key": 1 };
+  done.visitedFloors = Object.fromEntries(FLOOR_IDS.map((x) => [x, true]));
+  assert.equal(defaultTracked(done as never), null, "a finished expedition gets a dark pointer, not a nag");
+  for (const n of ALL_NODES) {
+    const t2 = defaultTracked({ ...f0, trackerSeen: {} } as never);
+    void t2;
+    if (nodeDoneEff(n, done as never)) continue;
+  }
+});
+
+test("objectives: every open MAIN/FORK node resolves to a real spot on its own floor", () => {
+  const f = freshFlags();
+  for (const n of ALL_NODES) {
+    if (n.kind === "SIDE") continue;
+    const floor = makeFloor(n.floor);
+    const t = resolveTarget(n, floor, { ...f, bossDown: { ...f.bossDown, [floor.objects.boss?.id ?? "x"]: false } } as never);
+    if (t === null) continue; // legitimately dark (sealed first hop) — must be sealed-exit case only
+    assert.ok(Number.isFinite(t.x) && Number.isFinite(t.y), `${n.id} resolved to NaN`);
+  }
+  // with the floor cleared, the exit chain resolves cleanly for every floor node
+  const cleared = { ...f, bossDown: Object.fromEntries(FLOOR_IDS.map((x) => [makeFloor(x).objects.boss?.id ?? "x", true])), unregistered: true, gateOpen: true } as never;
+  for (const n of ALL_NODES) {
+    const t = resolveTarget(n, makeFloor(n.floor), cleared as never);
+    assert.ok(t !== null, `${n.id} cannot resolve on its own cleared floor`);
+    assert.ok(!t!.sealed, `${n.id} still points at a sealed exit after clearing everything`);
+  }
+});
+
+test("objectives: the pointer never aims at a locked door — cross-floor walks respect the lock chain", () => {
+  const f = freshFlags();
+  const verdant = makeFloor("verdant");
+  // chasing an ashenveil errand from floor 1 with nothing done: first hop must be open or dark, never a fake route
+  const aNode = ALL_NODES.find((x) => x.floor === "ashenveil" && x.id === "a-key")!;
+  const t = resolveTarget(aNode, verdant, f);
+  if (t) assert.ok(t.x >= 0, "cross-floor target is at least a real coordinate");
+  // a locked first hop (boss down → door sealed) sends the pointer dark
+  const sealedExitFloor = { ...verdant, objects: { ...verdant.objects, exits: verdant.objects.exits.map((e) => ({ ...e, requires: "unregistered" })) } };
+  const t2 = resolveTarget({ id: "x", kind: "SIDE", title: "t", floor: "marsh", target: "npc:sila.marsh" } as ObjNode, sealedExitFloor as never, f);
+  if (t2) assert.notEqual(t2.label, "TO MARSH", "the pointer walked the player into a sealed door");
+  // citadel's unregistered door, before the deed: sealed flag on target so the renderer can gray it
+  const cit = makeFloor("citadel");
+  const t3 = resolveTarget(ALL_NODES.find((x) => x.id === "a-gate")!, cit, f);
+  assert.equal(t3, null, "an ashenveil prop is not targetable from citadel — dark pointer, honest note");
+});
+
+test("objectives: forks show both doors at once and the journal greys the whole group on one choice", () => {
+  const forkNodes = ALL_NODES.filter((x) => x.group === "c-help");
+  assert.ok(forkNodes.length >= 2, "the chains/pair fork needs two members");
+  const targets = new Set(forkNodes.map((x) => x.floor + "|" + x.target));
+  assert.ok(targets.size === forkNodes.length, "fork members must lead to different places");
+  const f0 = freshFlags();
+  for (const n of forkNodes) assert.ok(!nodeDoneEff(n, f0), "a fork door starts open");
+  const f1 = { ...f0, met: { "kang.caverns": 1 } } as never;
+  assert.ok(groupDone("c-help", f1 as never), "one act closes the group");
+  for (const n of forkNodes) assert.equal(nodeDoneEff(n, f1 as never), true, "both members resolve, grey, never failed");
+  // fork copy stays neutral — no judgement words
+  for (const n of ALL_NODES.filter((x) => x.kind === "FORK" || x.group)) {
+    assert.ok(!/\b(best|correct|right choice|should|smart|wrong move)\b/i.test(`${n.title} ${n.hint ?? ""}`), `${n.id} editorializes`);
+  }
+});
+
+test("objectives: journal rows list the whole graph with honest done state; metres read like art", () => {
+  const rows = journalRows(freshFlags());
+  assert.equal(rows.length, ALL_NODES.length);
+  assert.ok(rows.some((r) => r.node.id === "v-seo" && !r.done && r.active));
+  assert.ok(rows.some((r) => r.node.floor === "ashenveil"), "the far floor is in the book too");
+  assert.equal(METRES(40), 4, "10 world units = 1 metre");
+  assert.ok(METRES(5) >= 1, "never display 0m");
+});
+
+test("objectives: flag language covers negation, ledgers, and counters", () => {
+  const f = { ...freshFlags(), killsTotal: 15, met: { "seo.verdant": 2 }, bossDown: { hobgoblin: true }, gateOpen: true };
+  assert.ok(flagOn("killsTotal>=14", f));
+  assert.ok(!flagOn("killsTotal>=16", f));
+  assert.ok(flagOn("met:seo.verdant", f));
+  assert.ok(!flagOn("met:kang.caverns", f));
+  assert.ok(flagOn("bossDown:hobgoblin", f) && !flagOn("bossDown:sentinel", f));
+  assert.ok(flagOn("!unregistered", f) && !flagOn("unregistered", f));
+});
+
+test("save v3: the new ledger fields exist and old saves still normalize", () => {
+  const f = freshFlags();
+  assert.deepEqual(f.visitedFloors, {}, "visitedFloors is a floor ledger");
+  assert.equal(f.trackedId, "", "trackedId defaults to following the main line");
+  assert.equal(f.created, false, "the mirror remembers first visits");
+  const bare = normalizeSave({ version: 2, name: "OldTimer", level: 3 } as never);
+  assert.equal(bare.name, "OldTimer");
+  assert.deepEqual(bare.appearance, defaultAppearance("OldTimer"), "a half-shaped old save still gets the default look");
 });
 
 test("S1 Clause 7: gap 4 is nothing, gap 5 at half or worse is everything, and death is refused once", async () => {

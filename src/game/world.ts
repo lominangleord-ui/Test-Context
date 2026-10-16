@@ -43,6 +43,9 @@ export interface WorldFlags {
   introDone: boolean;
   ceremonyAnswer: string;
   trackerSeen: Record<string, boolean>;
+  visitedFloors: Record<string, boolean>; // jumpToFloor marks arrivals; the objective graph routes on it
+  trackedId: string;                   // journal-tracked objective ("" = follow the main line)
+  created: boolean;                    // the locker-room mirror: appearance committed at least once
   floorHp: number; // overworld HP on the current floor (hazard burns, rests mend); 0 = untouched
 }
 
@@ -54,7 +57,7 @@ export function freshFlags(): WorldFlags {
     genocideZone: false, tpDone: false, genDone: false, deaths: 0, saved: false,
     bossDown: {}, sparedStory: {}, regionDone: {},
     killsTotal: 0, savedPair: false, kangBond: false, emberBond: false, chainedTusk: false,
-    unregistered: false, introDone: false, trackerSeen: {}, ceremonyAnswer: "", floorHp: 0,
+    unregistered: false, introDone: false, trackerSeen: {}, visitedFloors: {}, trackedId: "", created: false, ceremonyAnswer: "", floorHp: 0,
   };
 }
 
