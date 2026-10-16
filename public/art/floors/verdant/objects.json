@@ -1,0 +1,139 @@
+{
+ "chunks": [
+  2,
+  2
+ ],
+ "spawn": [
+  900,
+  880
+ ],
+ "npcs": [
+  {
+   "id": "seo",
+   "x": 692,
+   "y": 408,
+   "sprite": "seo",
+   "facing": "left",
+   "dialogue": "seo.verdant"
+  },
+  {
+   "id": "hana",
+   "x": 560,
+   "y": 458,
+   "sprite": "hana",
+   "facing": "down",
+   "dialogue": "hana.verdant"
+  },
+  {
+   "id": "jino",
+   "x": 606,
+   "y": 498,
+   "sprite": "jino",
+   "facing": "down",
+   "dialogue": "jino.verdant"
+  },
+  {
+   "id": "roan",
+   "x": 1024,
+   "y": 332,
+   "sprite": "roan",
+   "facing": "down",
+   "dialogue": "roan.verdant",
+   "hideAfter": "genocideVerdant"
+  }
+ ],
+ "signs": [
+  {
+   "x": 860,
+   "y": 150,
+   "text": "sign.v.gate"
+  },
+  {
+   "x": 1382,
+   "y": 424,
+   "text": "sign.v.pond"
+  },
+  {
+   "x": 1288,
+   "y": 292,
+   "text": "sign.v.shrine"
+  },
+  {
+   "x": 540,
+   "y": 258,
+   "text": "sign.v.road"
+  },
+  {
+   "x": 828,
+   "y": 728,
+   "text": "sign.v.camp"
+  }
+ ],
+ "props": [
+  {
+   "x": 623,
+   "y": 348,
+   "w": 90,
+   "h": 60,
+   "sprite": "shrine",
+   "interactId": "plaza.shrine",
+   "prompt": "READ"
+  }
+ ],
+ "exits": [
+  {
+   "x": 648,
+   "y": 0,
+   "w": 140,
+   "h": 62,
+   "to": "marsh",
+   "label": "SUNKEN MARSH"
+  }
+ ],
+ "rests": [
+  {
+   "x": 890,
+   "y": 688,
+   "w": 104,
+   "h": 76
+  }
+ ],
+ "zones": [
+  {
+   "id": "thicket",
+   "x": 200,
+   "y": 330,
+   "w": 240,
+   "h": 170,
+   "enemies": [
+    "crawler",
+    "rhound",
+    "stalker",
+    "crawler",
+    "rhound"
+   ]
+  },
+  {
+   "id": "garden",
+   "x": 1230,
+   "y": 130,
+   "w": 200,
+   "h": 150,
+   "enemies": [
+    "stalker",
+    "rhound",
+    "crawler",
+    "stalker"
+   ]
+  }
+ ],
+ "boss": {
+  "id": "hobgoblin",
+  "name": "BLOOD-RED HOBGOBLIN",
+  "level": 5,
+  "x": 1232,
+  "y": 124,
+  "w": 136,
+  "h": 52
+ }
+}
