@@ -1,16 +1,27 @@
-import type { MonarchPath, PathId, PathSkill, TierNumber } from "../types";
+import type { GameClassId, MonarchPath, PathId, PathSkill, TierNumber } from "../types";
+
+/*
+ * The nine Monarch lineages — chosen freely at the Job Change ceremony
+ * (level 40). Each class can take any of the nine paths; the four starter
+ * classes are balanced so no single path is locked to a single class.
+ *
+ * Tier floors follow the corrected public rank curve:
+ *   Tier 1 (Nascent)     B-Rank       levels 40-54
+ *   Tier 2 (Ascendant)   A-Rank       levels 55-74
+ *   Tier 3 (Dominion)    S-Rank       levels 75-99
+ *   Tier 4 (Sovereign)   National     levels 100-119
+ *   Tier 5 (Transcendent) Monarch     levels 120+
+ */
 
 export const PATH_TIERS = [
   { number: 1, name: "Nascent", min: 40, max: 54, multiplier: 1.5 },
-  { number: 2, name: "Ascendant", min: 55, max: 69, multiplier: 1.75 },
-  { number: 3, name: "Dominion", min: 70, max: 89, multiplier: 2 },
-  { number: 4, name: "Sovereign", min: 90, max: 119, multiplier: 2.5 },
+  { number: 2, name: "Ascendant", min: 55, max: 74, multiplier: 1.75 },
+  { number: 3, name: "Dominion", min: 75, max: 99, multiplier: 2 },
+  { number: 4, name: "Sovereign", min: 100, max: 119, multiplier: 2.5 },
   { number: 5, name: "Transcendent", min: 120, max: Infinity, multiplier: 3 },
 ] as const;
 
 export const GATE_BOSS_STATS = {
-  // Retuned around the stats naturally earned at each tier floor. The original
-  // values could barely hurt a level-40 hunter after automatic VIT growth.
   nascent:      { hp: 300, atk: 92, def: 50 },
   ascendant:    { hp: 500, atk: 128, def: 78 },
   dominion:     { hp: 720, atk: 166, def: 108 },
@@ -24,6 +35,17 @@ export const TIER_TO_KEY: Record<number, keyof typeof GATE_BOSS_STATS> = {
   3: "dominion",
   4: "sovereign",
   5: "transcendent",
+};
+
+/**
+ * A reasonable default for which path each class tends toward (display only;
+ * does not lock selection). Any class can take any path at Job Change.
+ */
+export const CLASS_TO_PATH: Record<GameClassId, PathId> = {
+  fighter: "shadows",
+  mage: "destruction",
+  assassin: "fangs",
+  ranger: "frost",
 };
 
 export const MONARCH_PATHS: readonly MonarchPath[] = [
@@ -194,7 +216,13 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
 export const PATH_FLOURISH_IDS = MONARCH_PATHS.map((_, index) => 200 + index);
 
 export function getPath(id: PathId | null): MonarchPath | null {
+  if (!id) return null;
   return MONARCH_PATHS.find((path) => path.id === id) ?? null;
+}
+
+export function pathForClass(classId: GameClassId | null): MonarchPath | null {
+  if (!classId) return null;
+  return getPath(CLASS_TO_PATH[classId]);
 }
 
 export function getTier(level: number) {
