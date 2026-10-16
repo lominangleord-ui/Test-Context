@@ -199,7 +199,6 @@ test("items: potions and shop-only consumables behave inside fights", () => {
 const REGION_IDS = ["verdant", "marsh", "caverns", "citadel", "ashenveil"];
 const { getNpc, signAll, bossGate, bossAfter, nextObjective, prologue, ceremony, ceremonyAnswer, epilogue, regionArrive } =
   await import("../src/game/script.ts");
-const { campaignStats } = await import("../src/game/battle.ts");
 
 test("expedition regions: spawn walkable, exits bricked until the floor is resolved, lava never walkable", () => {
   for (const id of REGION_IDS) {
@@ -292,52 +291,101 @@ test("tracker: sparse by design — one shared milestone at a time, silence when
   assert.ok(/knows you|stopped raking/i.test(g!.text), "genocidal kills flip the tracker's voice");
 });
 
-test("resonance: two levels above AND at half HP the floor holds you; a peer fight gets no rescue", () => {
-  const mk = (lvl: number) => createBattle("crawler", {
-    name: "T", level: lvl, hp: 20, maxHp: 40, atk: 10, def: 5, potions: 0, carrots: 0, treats: 0, ramen: 0,
-  }, 3, 11, {});
-  const a = mk(9); const b = mk(4);
-  stepBattle(a, { up: false, down: false, left: false, right: false, confirm: false }, 0.1);
-  stepBattle(b, { up: false, down: false, left: false, right: false, confirm: false }, 0.1);
-  assert.equal(a.resonance, true, "overleveled + half HP = the System's fairness clause");
-  assert.ok(a.player.hp > 20, "and it actually knits HP back");
-  assert.equal(b.resonance, false, "one level above buys nothing — you earn the gap");
-  const hurt = mk(9); hurt.player.hp = 39; // above half → off
-  stepBattle(hurt, { up: false, down: false, left: false, right: false, confirm: false }, 0.1);
-  assert.equal(hurt.resonance, false, "it starts at the half, not before");
+test("S1 Clause 7: gap 4 is nothing, gap 5 at half or worse is everything, and death is refused once", async () => {
+  const { createBattle, stepBattle, resonanceApplies, RESONANCE_TEXT } = await import("../src/game/battle.ts");
+  assert.equal(resonanceApplies(45, 41, 15, 30), false, "four levels of gap buys nothing");
+  assert.equal(resonanceApplies(46, 41, 15, 30), true, "the fifth level is the clause");
+  assert.equal(resonanceApplies(46, 41, 16, 30), false, "it starts at half or worse — 51% is not it");
+  assert.equal(
+    RESONANCE_TEXT,
+    "[RESONANCE ACTIVE. Difficulty assist, Architect's Clause 7. The System does not watch you lose to something beneath you.]",
+    "the System's one true sentence about itself, word for word",
+  );
+  const NOINP = { up: false, down: false, left: false, right: false, confirm: false };
+  const mk = () => {
+    const st = createBattle("crawler", { name: "T", level: 30, hp: 12, maxHp: 24, atk: 10, def: 5, potions: 0, carrots: 0, treats: 0, ramen: 0 }, 25, 7, {});
+    st.phase = "enemyTurn"; st.turnT = 999;
+    st.bullets = [{ x: st.soul.x, y: st.soul.y, vx: 0, vy: 0, w: 40, h: 40, shape: "rect", ttl: 9, windup: 0 }];
+    return st;
+  };
+  // regen: exactly 8% of max HP per second while it holds
+  const g = createBattle("crawler", { name: "T", level: 30, hp: 12, maxHp: 24, atk: 10, def: 5, potions: 0, carrots: 0, treats: 0, ramen: 0 }, 25, 9, {});
+  stepBattle(g, NOINP, 1.0);
+  assert.ok(Math.abs(g.player.hp - 13.92) < 0.02, `8%/s mending (got ${g.player.hp})`);
+  // the refusal of death — once, at 25%, and no more
+  const st = mk();
+  st.player.hp = 1;
+  stepBattle(st, NOINP, 0.016);
+  assert.equal(st.over, false, "the first death is declined");
+  assert.equal(st.player.hp, 6, "you stand back up at a quarter");
+  assert.equal(st.reviveUsed, true);
+  st.phase = "enemyTurn"; st.turnT = 999; st.hitInv = 0; st.player.hp = 1;
+  st.bullets = [{ x: st.soul.x, y: st.soul.y, vx: 0, vy: 0, w: 40, h: 40, shape: "rect", ttl: 9, windup: 0 }];
+  stepBattle(st, NOINP, 0.016);
+  assert.equal(st.result?.outcome, "death", "the second death is accepted — the clause says once");
+  // and under-leveled, nothing saves anyone, ever
+  const under = createBattle("crawler", { name: "T", level: 20, hp: 3, maxHp: 24, atk: 10, def: 5, potions: 0, carrots: 0, treats: 0, ramen: 0 }, 25, 4, {});
+  under.phase = "enemyTurn"; under.turnT = 999;
+  under.bullets = [{ x: under.soul.x, y: under.soul.y, vx: 0, vy: 0, w: 40, h: 40, shape: "rect", ttl: 9, windup: 0 }];
+  stepBattle(under, NOINP, 0.016);
+  assert.equal(under.result?.outcome, "death", "below the wall there is no hand on the shoulder");
 });
 
-test("adaptive scaling: wild monsters clamp to their floor's band; bosses never scale", () => {
-  // the same clamp the view applies, asserted against the zone definitions
-  const clampEff = (lvl: number, z: { min?: number; max?: number }) => Math.max(z.min ?? 1, Math.min(z.max ?? 40, lvl));
+test("S1 adaptive spawns: ±1 of the hunter, minimum 1, no floor band survives", async () => {
+  const { spawnLevelFor } = await import("../src/game/battle.ts");
+  assert.equal(spawnLevelFor(1, () => 0), 1, "never spawns below 1");
+  assert.equal(spawnLevelFor(1, () => 0.999), 2);
+  assert.equal(spawnLevelFor(40, () => 0), 39);
+  assert.equal(spawnLevelFor(40, () => 0.5), 40);
+  assert.equal(spawnLevelFor(40, () => 0.999), 41);
+  assert.equal(spawnLevelFor(61, () => 0), 60, "no ceiling exists anywhere in the function");
+  for (const r of [0, 0.33, 0.5, 0.66, 0.99]) {
+    const v = spawnLevelFor(23, () => r);
+    assert.ok(Math.abs(v - 23) <= 1 && v >= 1, "exactly the ±1 window");
+  }
+  // the view must actually use it — the old z.min/z.max clamp is deleted, not bypassed
+  const { readFileSync } = await import("node:fs");
+  const vs = readFileSync("src/game/view.ts", "utf8");
+  assert.ok(!/Math\.max\(z\.min[^\n]*z\.max/.test(vs), "no band clamp survives in the encounter path");
+  assert.ok(vs.includes("spawnLevelFor(lvl, Math.random)"), "the wild meets you at ±1");
+  // floors still decide species, and bosses stay authored fixed-level
   const v = buildWorld("verdant");
-  const z = v.zones[0];
-  assert.equal(clampEff(1, z), z.min, "a LV-1 player fights at the floor's true danger — this is where you learn");
-  assert.equal(clampEff(60, z), z.max, "a LV-60 player still fights a ceilinged monster, strong but fair");
-  const ridge = buildWorld("ashenveil").zones.find((x) => x.id === "ridge")!;
-  assert.ok((ridge.min ?? 0) >= 7, "the ridge stays the ridge: no free speedrun through snow");
+  assert.ok(v.zones[0].enemies.length > 0, "the floor still picks WHAT lives here");
   for (const id of REGION_IDS) {
     const w = buildWorld(id);
     if (w.boss) assert.ok(w.boss.level > 0 && Number.isFinite(w.boss.level), `${id}: boss level is fixed authored math`);
   }
 });
 
-test("campaign stats: small at LV1, grow with dailies, and fatigue is a real tax", () => {
-  const l1 = campaignStats(1, 1, 1, 1, 10);
+test("S1 stats: LV1 is MORTAL (~30 HP), growth is earned, fatigue is a tax, and nothing is hidden", async () => {
+  const { campaignStats, makeEnemy } = await import("../src/game/battle.ts");
+  const { expectedCombat, expectedStatSpread } = await import("../src/lib/story.ts");
+  const l1 = campaignStats(1, 10, 10, 10, 10);
+  assert.ok(l1.maxHP >= 26 && l1.maxHP <= 34, `LV1 HP lands near 30 (got ${l1.maxHP})`);
   const l20 = campaignStats(20, 20, 20, 20, 10);
-  assert.ok(l1.maxHP <= 45, `LV1 HP stays mortal (got ${l1.maxHP})`);
   assert.ok(l20.maxHP > l1.maxHP * 2.5, "training pays in HP");
   assert.ok(l20.atk > l1.atk * 2, "training pays in ATK");
   const tired = campaignStats(20, 20, 20, 20, 90);
   assert.ok(tired.maxHP < l20.maxHP && tired.atk < l20.atk, "skipping dailies leaves you weaker in here");
-  const enemy = ENEMY_LINES.hare ? 1 : 0; void enemy;
-  // and a fresh LV1 with full effort can still trade blows with a LV1 crawler: the
-  // floor's minimum band is 1, player HP ~40, expectedCombat(1) must not one-shot:
-  const { expectedCombat } = await0();
-  void expectedCombat;
+  // foe stats ARE the curve — no boss band, no story band, no hidden anything
+  for (const L of [1, 7, 25, 38]) {
+    const foe = expectedCombat(L).combat;
+    const mob = makeEnemy("hare", L);
+    assert.equal(mob.hp, foe.maxHP, `hp is exactly expectedCombat(${L})`);
+    assert.equal(mob.atk, foe.atk, `atk is exactly expectedCombat(${L})`);
+    assert.equal(mob.def, foe.def, `def is exactly expectedCombat(${L})`);
+    const boss = makeEnemy("warden", L);
+    assert.equal(boss.hp, foe.maxHP, "bosses get boards and turns, not secret stats");
+  }
+  // the LV1 rule: a level-1 monster ends a fresh hunter in four or five hits,
+  // and the fresh hunter does not one-shot it back
+  const s1 = expectedCombat(1).combat;
+  const hitsOnYou = Math.ceil(l1.maxHP / Math.max(1, Math.round(s1.atk * 0.32 - l1.def * 0.18)));
+  assert.ok(hitsOnYou >= 4 && hitsOnYou <= 5, `peer monster kills in ${hitsOnYou} hits — that is the floor you climb from`);
+  const yourStrikes = Math.ceil(s1.maxHP / Math.max(1, Math.round(l1.atk * 1.95 - s1.def)));
+  assert.ok(yourStrikes >= 4, "no free kills in either direction");
+  void expectedStatSpread;
 });
-function await0() { return { expectedCombat: (_l: number) => ({ combat: { hp: 0 } }) }; }
-
 test("story spine: prologue, ceremony, and epilogue all honor the ledgers", () => {
   assert.ok(prologue("SHA").some((l: { text?: string }) => (l.text ?? "").includes("SHA")), "prologue personalizes");
   assert.ok(ceremony(freshFlags()).length >= 5, "the ceremony stages its people");
@@ -377,4 +425,122 @@ test("save v2: fresh flags carry every expedition ledger field", () => {
   assert.equal(f.killsTotal, 0);
   assert.equal(f.ceremonyAnswer, "");
   assert.equal(f.unregistered, false);
+});
+
+test("S1 bosses: authored fixed levels; three bands — verdict at −3, war at ±0, mercy at +5", async () => {
+  const { makeEnemy, campaignStats, underdogFactor, underlevelCut } = await import("../src/game/battle.ts");
+  const { expectedStatSpread } = await import("../src/lib/story.ts");
+  const statsAt = (L: number, fat = 10) => {
+    const [str, agi, vit] = expectedStatSpread(L);
+    return campaignStats(L, str, agi, vit, fat);
+  };
+  // bosses live on floors 1-5 at authored levels — the world file carries them
+  for (const id of REGION_IDS) {
+    const w = buildWorld(id);
+    if (w.boss) assert.ok(Number.isInteger(w.boss.level) && w.boss.level >= 1, `${id}: authored`);
+  }
+  const BOSS = 38;
+  const boss = makeEnemy("warden", BOSS);
+  // band A — three levels under: you die fast and you cannot chip
+  const a = statsAt(35);
+  const dmgA = Math.max(1, Math.round(Math.round(boss.atk * 0.32 - a.def * 0.18) * underdogFactor(35, BOSS)));
+  const hitsA = Math.ceil(a.maxHP / dmgA);
+  assert.ok(hitsA <= 3, `three levels under = ${hitsA} hits to die; the wall is the wall`);
+  const strikeA = Math.max(1, Math.round(Math.round(a.atk * 1.95 - boss.def) * underlevelCut(35, BOSS)));
+  assert.ok(strikeA / boss.hp <= 0.02, `FIGHT does ${(100 * strikeA / boss.hp).toFixed(1)}% — the band says no`);
+  // band B — at level: hard but fair
+  const b = statsAt(BOSS);
+  const dmgB = Math.max(1, Math.round(boss.atk * 0.32 - b.def * 0.18));
+  assert.ok(Math.ceil(b.maxHP / dmgB) >= 4, "at level you are not glass, just not safe");
+  const strikeB = Math.max(1, Math.round(b.atk * 1.95 - boss.def));
+  assert.ok(strikeB / boss.hp >= 0.025, "at level every clean hit counts");
+  // band C — five over: a bad player outlasts it (Clause 7 math, standing still)
+  const c = statsAt(BOSS + 5);
+  const softC = Math.max(1, Math.round(Math.round(boss.atk * 0.32 - c.def * 0.18) * 0.35));
+  const mendC = c.maxHP * 0.08 * 1.2; // 8%/s across the softened 1.2s i-frame window
+  assert.ok(mendC >= softC, `standing in it heals ${mendC.toFixed(0)} vs ${softC} per hit — winnable by design`);
+  const strikeC = Math.max(1, Math.round(c.atk * 1.95 - boss.def));
+  assert.ok(strikeC / boss.hp >= 0.05, "and you out-math it with ease");
+});
+
+test("S1 patterns: tier by foe level — 1-9 / 10-24 / 25-39 / 40+, new shapes unlock", async () => {
+  const { patternTier, createBattle, beginEnemyTurn } = await import("../src/game/battle.ts");
+  assert.deepEqual([1, 9].map(patternTier), [1, 1]);
+  assert.deepEqual([10, 24].map(patternTier), [2, 2]);
+  assert.deepEqual([25, 39].map(patternTier), [3, 3]);
+  assert.deepEqual([40, 100].map(patternTier), [4, 4]);
+  // a T3 foe's pool contains the T3 shapes (sample many turns — the escalation is stochastic)
+  const st = createBattle("crawler", { name: "T", level: 1, hp: 999, maxHp: 999, atk: 1, def: 1, potions: 0, carrots: 0, treats: 0, ramen: 0 }, 30, 1234, {});
+  const seen = new Set<string>();
+  for (let i = 0; i < 60; i++) { beginEnemyTurn(st); seen.add(st._pattern ?? ""); }
+  assert.ok(seen.size >= 2, `tier pool escalates (saw ${[...seen].join(",")})`);
+  const t1 = createBattle("crawler", { name: "T", level: 1, hp: 999, maxHp: 999, atk: 1, def: 1, potions: 0, carrots: 0, treats: 0, ramen: 0 }, 5, 1234, {});
+  const seen1 = new Set<string>();
+  for (let i = 0; i < 60; i++) { beginEnemyTurn(t1); seen1.add(t1._pattern ?? ""); }
+  assert.deepEqual([...seen1].sort(), ["hops", "rain"], "T1 stays slow and single — pattern purity for beginners");
+});
+
+test("S1 HARD GATE: no shadow extraction, no Monarch power of any kind before the Job Change", async () => {
+  const { claimGate, claimVerbFor, createBattle, menuItems } = await import("../src/game/battle.ts");
+  const { MONARCH_PATHS } = await import("../src/data/monarchPaths.ts");
+  assert.equal(MONARCH_PATHS.length, 9, "nine lineages exist");
+  for (const lvl of [0, 1, 12, 39]) for (const p of MONARCH_PATHS)
+    assert.equal(claimGate(lvl, p.id), false, `LV${lvl} claims nothing (${p.id}) — FAIL: the gate leaked`);
+  assert.equal(claimGate(39, "shadows"), false, "thirty-nine is not forty");
+  assert.equal(claimGate(40, null), false, "no lineage = no word");
+  assert.equal(claimGate(40, "shadows"), true, "LV40 AND a chosen lineage — that is the whole key");
+  for (const p of MONARCH_PATHS) assert.ok(p.claimVerb && p.claimVerb.length > 2, `${p.id} has its own word`);
+  assert.equal(new Set(MONARCH_PATHS.map((p) => p.claimVerb)).size, 9, "nine verbs, nine lineages, no shared words");
+  assert.equal(claimVerbFor("shadows"), "EXTRACT: ARISE", "the Shadow Monarch's is the one from the stories");
+  assert.equal(claimVerbFor(null), "CLAIM", "pre-change there is no verb to speak at all");
+  // the engine trusts one boolean and the view is the only one who sets it —
+  // and it can only come up through claimGate (grep-enforced, not vibes-enforced)
+  const { readFileSync } = await import("node:fs");
+  const vs = readFileSync("src/game/view.ts", "utf8");
+  const calls = (vs.match(/canClaim:\s*claimGate\(s\.level,\s*s\.monarchPath\)/g) ?? []).length;
+  assert.equal(calls, 1, "exactly one canClaim call site, gated by claimGate");
+  // and the mercy menu honestly has three doors when no claim is possible
+  const st = createBattle("hare", { name: "T", level: 1, hp: 20, maxHp: 20, atk: 10, def: 5, potions: 0, carrots: 0, treats: 0, ramen: 0 }, 1, 3, {});
+  st.menu = 3;
+  assert.deepEqual(menuItems(st).map((i) => i.label), ["Spare", "Flee", "Back"], "no hidden fourth door");
+  assert.equal(st.canClaim, false);
+  assert.equal(st.claimVerb, "CLAIM", "an unchosen player has no word");
+});
+
+test("S1 claims: the EXTRACT ring — three attempts maximum, wider with gap, tighter with foe level, never 100%", async () => {
+  const { createBattle, beginClaim, resolveClaim, claimWindowFor, advanceDialogue, menuItems } = await import("../src/game/battle.ts");
+  assert.ok(claimWindowFor(41, 40) < claimWindowFor(80, 40), "gap widens the ring");
+  assert.ok(claimWindowFor(80, 92) < claimWindowFor(80, 40), "a stronger name narrows it");
+  assert.ok(claimWindowFor(999, 1) <= 0.6, "never a sure thing, whatever the grind");
+  assert.ok(claimWindowFor(40, 300) >= 0.08, "never hopeless either");
+  const mk = () => {
+    const st = createBattle("warden", { name: "T", level: 41, hp: 100, maxHp: 100, atk: 10, def: 5, potions: 0, carrots: 0, treats: 0, ramen: 0, path: "shadows" }, 38, 5, { canClaim: true });
+    return st;
+  };
+  const st = mk();
+  assert.equal(st.claimVerb, "EXTRACT: ARISE");
+  st.menu = 3;
+  assert.ok(menuItems(st).some((i) => i.label === "EXTRACT: ARISE"), "the door shows only because the gate is open");
+  beginClaim(st);
+  while ((st.phase as string) === "dialogue") advanceDialogue(st);
+  assert.equal(st.phase, "extract");
+  st.bar.pos = 0.02; st.bar.locked = null;
+  resolveClaim(st);
+  assert.equal(st.result?.outcome, "claim", "center of the ring holds the name");
+  assert.equal(st.over, true);
+  // three misses and the folder closes for good
+  const s2 = mk();
+  for (let i = 0; i < 3; i++) {
+    beginClaim(s2);
+    while ((s2.phase as string) === "dialogue") advanceDialogue(s2);
+    assert.equal(s2.phase, "extract", `attempt ${i + 1}`);
+    s2.bar.pos = 0.95; s2.bar.locked = null;
+    resolveClaim(s2);
+    while ((s2.phase as string) === "dialogue") advanceDialogue(s2);
+  }
+  assert.equal(s2.claimLocked, true, "three attempts, that is all the folder gets");
+  assert.notEqual(s2.result?.outcome, "claim", "misses stay misses");
+  const before = s2.claimAttempts;
+  beginClaim(s2);
+  assert.equal(s2.claimAttempts, before, "a closed folder does not reopen");
 });

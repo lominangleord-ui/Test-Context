@@ -219,6 +219,7 @@ export const Sfx = {
   gate: () => { tone(90, 0.3, "sawtooth", 0.06, 0, 40); noise(0.25, 0.05, 0.05); },
   error: () => tone(180, 0.14, "square", 0.05, 0, -60),
   death: () => { for (let i = 0; i < 8; i++) tone(440 - i * 45, 0.14, "sawtooth", 0.05, i * 0.13); },
+  heartbeat: () => { tone(62, 0.1, "sine", 0.05); tone(56, 0.09, "sine", 0.038, 0.17); },
   bossIntro: () => { for (let i = 0; i < 4; i++) tone(98, 0.12, "square", 0.06, i * 0.13); tone(130, 0.5, "sawtooth", 0.05, 0.5, -30); },
 
   // --- tiny sequencer for background loops ---

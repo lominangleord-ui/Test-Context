@@ -122,6 +122,8 @@ export interface MonarchPath {
   color: string;
   /** Drives the Tier-5 ultimate's stat requirement, split three paths per stat. */
   primaryStat: StatKey;
+  /** The claim verb this lineage speaks over a kneeling foe (post-LV40 only). */
+  claimVerb: string;
   moves: readonly [PathMove, PathMove, PathMove, PathMove, PathMove];
   tiers: readonly [PathTier, PathTier, PathTier, PathTier, PathTier];
 }

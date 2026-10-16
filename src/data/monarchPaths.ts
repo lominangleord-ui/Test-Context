@@ -51,6 +51,7 @@ export const CLASS_TO_PATH: Record<GameClassId, PathId> = {
 export const MONARCH_PATHS: readonly MonarchPath[] = [
   {
     id: "shadows", name: "Shadow Monarch", monarchTitle: "Shadow Monarch", jobClass: "Necromancer", icon: "♛", color: "#a58bff", primaryStat: "vit",
+    claimVerb: "EXTRACT: ARISE",
     flavor: "You don't fight alone anymore. Raise an army from every battle you win.", signatureExercise: "squat",
     moves: [
       { id: "shadows:1", tier: 1, role: "opener", name: "Army of the Dead", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -69,6 +70,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "destruction", name: "Monarch of Destruction", monarchTitle: "Monarch of Destruction", jobClass: "Dragon Mage", icon: "△", color: "#ff6f66", primaryStat: "str",
+    claimVerb: "IMMOLATE",
     flavor: "Antares's line. You don't out-train your limits; you incinerate them.", signatureExercise: "push",
     moves: [
       { id: "destruction:1", tier: 1, role: "opener", name: "Draconification", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -87,6 +89,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "white-flames", name: "Monarch of White Flames", monarchTitle: "Monarch of White Flames", jobClass: "Pyromancer", icon: "✧", color: "#ffb180", primaryStat: "agi",
+    claimVerb: "SANCTIFY",
     flavor: "Baran's line. Burn through fatigue; forge yourself in black fire.", signatureExercise: "push",
     moves: [
       { id: "white-flames:1", tier: 1, role: "opener", name: "Hellfire Summoning", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -105,6 +108,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "fangs", name: "Monarch of Fangs", monarchTitle: "Monarch of Fangs", jobClass: "Berserker", icon: "⋇", color: "#dfac7b", primaryStat: "str",
+    claimVerb: "STAKE",
     flavor: "Rakan's line. Pack instinct; you don't quit on a hunt.", signatureExercise: "squat",
     moves: [
       { id: "fangs:1", tier: 1, role: "opener", name: "Beast Call", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -123,6 +127,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "frost", name: "Monarch of Frost", monarchTitle: "Monarch of Frost", jobClass: "Cryomancer", icon: "✳", color: "#8fdfff", primaryStat: "vit",
+    claimVerb: "ENTOMB",
     flavor: "Sillad's line. Stillness and control; the body that doesn't break.", signatureExercise: "sit",
     moves: [
       { id: "frost:1", tier: 1, role: "opener", name: "Glacial Entombment", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -141,6 +146,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "iron-body", name: "Monarch of the Iron Body", monarchTitle: "Monarch of the Iron Body", jobClass: "Juggernaut", icon: "▣", color: "#ced7e0", primaryStat: "vit",
+    claimVerb: "FORGE",
     flavor: "Tarnak's line. You are the thing that doesn't move.", signatureExercise: "squat",
     moves: [
       { id: "iron-body:1", tier: 1, role: "opener", name: "Golem Forge", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -159,6 +165,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "beginning", name: "Monarch of the Beginning", monarchTitle: "Monarch of the Beginning", jobClass: "Brawler", icon: "◆", color: "#c9ae91", primaryStat: "str",
+    claimVerb: "NAME",
     flavor: "Legia's line. Raw, primal, first-principles strength.", signatureExercise: "push",
     moves: [
       { id: "beginning:1", tier: 1, role: "opener", name: "Colossal Growth", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -177,6 +184,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "plagues", name: "Monarch of Plagues", monarchTitle: "Monarch of Plagues", jobClass: "Poison Mage", icon: "☣", color: "#8ed990", primaryStat: "agi",
+    claimVerb: "SOW",
     flavor: "Querehsha's line. Patient, relentless, everywhere at once.", signatureExercise: "sit",
     moves: [
       { id: "plagues:1", tier: 1, role: "opener", name: "Parasitic Infection", power: 1.3, cost: 3, requiresTrial: 1 },
@@ -195,6 +203,7 @@ export const MONARCH_PATHS: readonly MonarchPath[] = [
   },
   {
     id: "transfiguration", name: "Monarch of Transfiguration", monarchTitle: "Monarch of Transfiguration", jobClass: "Illusionist", icon: "⌬", color: "#d3a1ef", primaryStat: "agi",
+    claimVerb: "FOLD",
     flavor: "Yogumunt's line. Nothing about you has to stay what it was.", signatureExercise: "sit",
     moves: [
       { id: "transfiguration:1", tier: 1, role: "opener", name: "Spatial Alteration", power: 1.3, cost: 3, requiresTrial: 1 },

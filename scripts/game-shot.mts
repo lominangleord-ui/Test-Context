@@ -229,15 +229,16 @@ place(31 * 16 + 8, 8.5 * 16, "up"); await frames(6);
 shot("41-verdant-boss");
 place(36 * 16, 45 * 16, "up"); await frames(6);
 shot("42-verdant-camp");
-(A.beginBattle as (id: string, lv: number, b?: boolean) => void).call(g, "crawler", 3); await frames(4);
+useGame.setState({ level: 6 }); // S1: a LV1 vs the floor band's old 3 crawler is a LOSE by design — the demo fights at the honest edge
+(A.beginBattle as (id: string, lv: number, b?: boolean) => void).call(g, "crawler", 1); await frames(4);
 shot("43-crawler-intro");
 for (let i = 0; i < 8 && (A.battle as { phase: string }).phase === "dialogue"; i++) { A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); await frames(2); }
 shot("44-crawler-menu");
 { const bt = A.battle as { menu: number; phase: string; bar: { pos: number } }; bt.menu = 0; A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); await frames(2); A.input.press("confirm", true); await frames(3); A.input.press("confirm", false); await frames(10); shot("45-crawler-bar"); A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); await frames(10); }
-for (let i = 0; i < 40 && !(A.battle as { over: boolean }).over; i++) { const ph = (A.battle as { phase: string }).phase; if (ph === "dialogue") { A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); } else if (ph === "enemyTurn") await frames(60); else if (ph === "menu") { (A.battle as { menu: number }).menu = 0; A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); (A.battle as { bar: { pos: number } }).bar.pos = 0; A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); await frames(6); } else break; }
+for (let i = 0; i < 90 && !(A.battle as { over: boolean }).over; i++) { const ph = (A.battle as { phase: string }).phase; if (ph === "dialogue") { A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); } else if (ph === "enemyTurn") await frames(60); else if (ph === "menu") { (A.battle as { menu: number }).menu = 0; A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); (A.battle as { bar: { pos: number } }).bar.pos = 0; A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); await frames(6); } else break; }
 shot("46-crawler-end");
 A.battle = null; A.mode = "world"; A.pages = null;
-// resonance demo: level 9 vs a level-3 crawler at half HP
+// resonance demo: level 9 vs a level-3 rhound at half HP (gap 6 — past the Clause 7 threshold of 5)
 useGame.setState({ level: 9 });
 (A.beginBattle as (id: string, lv: number, b?: boolean) => void).call(g, "rhound", 3); await frames(4);
 { const b = A.battle as { player: { hp: number; maxHp: number }; phase: string }; while ((A.battle as { phase: string }).phase === "dialogue") { A.input.press("confirm", true); await frames(2); A.input.press("confirm", false); } b.player.hp = Math.floor(b.player.maxHp * 0.4); await frames(10); }

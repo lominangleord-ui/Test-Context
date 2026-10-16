@@ -11,7 +11,7 @@ import {
 } from "./world";
 import {
   createBattle, stepBattle, confirmAtMenu, navMenu, advanceDialogue, lockBar,
-  menuItems, campaignStats, type BattleState,
+  menuItems, campaignStats, spawnLevelFor, claimGate, REMNANT_IDS, resolveClaim, RESONANCE_TEXT, type BattleState,
 } from "./battle";
 import {
   getNpc, signAll, ENDINGS, SHOP_INTRO, SHOP_ITEMS,
@@ -303,6 +303,8 @@ export class AshenGame {
     }
   }
 
+  private resBeatT = 0;
+
   private encounterTick() {
     if (this.encCooldown > 0) return;
     const z = zoneAt(this.world, this.px, this.py);
@@ -315,12 +317,12 @@ export class AshenGame {
       this.steps = 0;
       const id = z.enemies[Math.floor(Math.random() * z.enemies.length)];
       Sfx.encounter();
-      // ADAPTIVE: the wild scales to YOU, clamped to the floor's band. Too low
-      // and it fights at the floor's minimum (it will still hurt you). Too high
-      // and it caps at the band's max — strong, but beatable by skill.
+      // ADAPTIVE: the wild meets you at ±1 level, minimum 1 — the floor decides
+      // WHAT lives here and how its bullets are shaped, never how hard it hits.
+      // No band, no ceiling. A level-60 hunter spooked by a level-59 rat is the
+      // rat's achievement, not a bug.
       const lvl = useGame.getState().level;
-      const eff = Math.max(z.min ?? 1, Math.min(z.max ?? 40, lvl));
-      this.beginBattle(id, eff, false);
+      this.beginBattle(id, spawnLevelFor(lvl, Math.random), false);
     }
   }
 
@@ -478,10 +480,14 @@ export class AshenGame {
       hp: combat.maxHP, maxHp: combat.maxHP, atk: combat.atk, def: combat.def,
       potions: s.potions,
       carrots: bought.carrot ?? 0, treats: bought.treat ?? 0, ramen: bought.ramen ?? 0,
+      path: s.monarchPath ?? undefined, // only exists past the Job Change; claimGate guards the rest
     }, zoneLevel, (Date.now() ^ 0x5f3759df) >>> 0, {
       sparedHare: f.sparedHare, sparedHound: f.sparedHound,
       sparedHob: f.sparedStory["hobgoblin"], savedPair: f.savedPair,
       emberBond: f.emberBond, kangTaught: f.kangBond, chainedTusk: f.chainedTusk,
+      // HARD GATE: no claim of any kind before the Job Change. The engine cannot
+      // open this door by itself — there is no other caller (locked by tests).
+      canClaim: claimGate(s.level, s.monarchPath) && REMNANT_IDS.has(id),
     });
     this.mode = "battle";
     Sfx.stopMusic();
@@ -494,6 +500,11 @@ export class AshenGame {
     const b = this.battle;
     if (!b) { this.mode = "world"; return; }
     const inp = this.input;
+    if (b.resonance) {
+      // a faint heartbeat under the room — felt, not heard
+      this.resBeatT += dt;
+      if (this.resBeatT > 1.1) { this.resBeatT = 0; Sfx.heartbeat(); }
+    } else this.resBeatT = 0;
     if (b.over) {
       if (inp.pressed("confirm")) {
         if (b.phase === "won" || b.phase === "spared") {
@@ -522,8 +533,15 @@ export class AshenGame {
       stepBattle(b, { up: false, down: false, left: false, right: false, confirm: false }, dt);
       return;
     }
-    if (b.phase === "target") {
-      if (inp.pressed("confirm") && b.bar.locked === null) { lockBar(b); Sfx.hitEnemy(); }
+    if (b.phase === "target" || b.phase === "extract") {
+      if (inp.pressed("confirm") && b.bar.locked === null) {
+        if (b.phase === "target") { lockBar(b); Sfx.hitEnemy(); }
+        else {
+          resolveClaim(b);
+          Sfx.select();
+          if (b.over && b.result?.outcome === "claim") Sfx.spare();
+        }
+      }
       stepBattle(b, { up: false, down: false, left: false, right: false, confirm: false }, dt);
       return;
     }
@@ -561,6 +579,15 @@ export class AshenGame {
     Sfx.stopMusic();
     const store = useGame.getState();
     const eid = b.enemy.id;
+    if (r.outcome === "claim") {
+      // A claimed name: small thanks from the System; the ally itself is the reward.
+      // (S7 wires claimed shadows into the army ledger — the door is shut until then.)
+      store.awardBattle(r.sp, r.gold);
+      this.battle = null;
+      this.mode = "world";
+      Sfx.playMusic(this.world.region.music);
+      return;
+    }
     if (r.outcome === "win") {
       store.awardBattle(r.sp, r.gold);
       const z = zoneAt(this.world, this.px, this.py);
@@ -1098,7 +1125,7 @@ export class AshenGame {
         if (t.who) { drawText(g, t.who, bx + 18, y, 12, "#ffd88a"); y += 18; }
         this.wrap(t.text, 13, bw - 36).slice(0, 4).forEach((l, i) => drawText(g, l, bx + 18, y + 4 + i * 17, 13, "#ffffff"));
       }
-      if (b.over && b.result && (b.result.outcome === "win" || b.result.outcome === "spare")) {
+      if (b.over && b.result && (b.result.outcome === "win" || b.result.outcome === "spare" || b.result.outcome === "claim")) {
         drawText(g, `+${b.result.sp} SKILL POINTS   +${b.result.gold} GOLD${b.result.outcome === "spare" ? "   (MERCY \u2014 no XP exists; ask the 5 AM crew)" : ""}`, bx + 18, by + bh - 22, 11, "#9fe8ff");
         if (Math.floor(performance.now() / 300) % 2 === 0) drawText(g, "\u25BC Z", bx + bw - 16, by + bh - 22, 12, "#fff", "right");
       } else if (b.over) {
@@ -1114,6 +1141,18 @@ export class AshenGame {
       g.fillStyle = b.bar.locked !== null ? "#7fff9e" : "#ffffff";
       g.fillRect(px - 3, barY - 3, 6, 30);
       drawText(g, "Z \u2014 STRIKE", VIEW_W / 2, by + 34, 13, "#9fb4d8", "center");
+    }
+    if (b.phase === "extract") {
+      const ebarW = bw, ebarY = by - 60;
+      g.fillStyle = "#0b1018"; g.fillRect(bx, ebarY, ebarW, 24);
+      g.strokeStyle = "#8fb4ff"; g.lineWidth = 2; g.strokeRect(bx + 1, ebarY + 1, ebarW - 2, 22);
+      const half = b.claimWindow * (ebarW / 2 - 14);
+      g.fillStyle = "rgba(140,180,255,0.3)"; g.fillRect(bx + ebarW / 2 - half, ebarY + 2, half * 2, 20);
+      g.strokeStyle = "rgba(200,220,255,0.6)"; g.strokeRect(bx + ebarW / 2 - half, ebarY + 2, half * 2, 20);
+      const epx = bx + ebarW / 2 + b.bar.pos * (ebarW / 2 - 14);
+      g.fillStyle = b.bar.locked !== null ? "#7fff9e" : "#ffffff";
+      g.fillRect(epx - 3, ebarY - 3, 6, 30);
+      drawText(g, `Z \u2014 ${b.claimVerb}`, VIEW_W / 2, by + 34, 13, "#8fb4ff", "center");
     }
     if ((b.phase === "menu" || b.phase === "target" || b.phase === "enemyTurn") && !b.over) {
       const labels = ["FIGHT", "ACT", "ITEM", "MERCY"];
@@ -1151,6 +1190,28 @@ export class AshenGame {
     }
     if (b.shake > 0.1) g.restore();
     if (b.flash > 0.01) { g.fillStyle = `rgba(255,60,90,${b.flash * 0.3})`; g.fillRect(0, 0, VIEW_W, VIEW_H); }
+    if (b.resonance) {
+      // soft blue, hand-on-the-shoulder — an assist that will not explain itself
+      const t = performance.now() / 1000;
+      const pulse = 0.10 + 0.05 * Math.sin(t * Math.PI * 2 * 0.92);
+      g.save();
+      g.beginPath(); g.rect(bx + 3, by + 3, bw - 6, bh - 6); g.clip();
+      const cx = b.soul.x, cy = b.soul.y;
+      const rg = g.createRadialGradient(cx, cy, 2, cx, cy, 28);
+      rg.addColorStop(0, `rgba(140,180,255,${(pulse + 0.12).toFixed(3)})`);
+      rg.addColorStop(1, "rgba(140,180,255,0)");
+      g.fillStyle = rg; g.fillRect(cx - 32, cy - 32, 64, 64);
+      g.fillStyle = `rgba(172,200,255,${(0.3 + pulse).toFixed(3)})`;
+      g.fillRect(cx - 12, cy - 10, 7, 4); g.fillRect(cx + 5, cy - 10, 7, 4);
+      g.fillRect(cx - 13, cy - 13, 2, 4); g.fillRect(cx + 11, cy - 13, 2, 4);
+      g.restore();
+    }
+    if (b.resFlash > 0) {
+      g.globalAlpha = Math.min(1, b.resFlash);
+      const rlines = this.wrap(RESONANCE_TEXT, 11, VIEW_W - 130).slice(0, 3);
+      rlines.forEach((l, i) => drawText(g, l, VIEW_W / 2, 222 + i * 13, 11, "#bcd0ff", "center"));
+      g.globalAlpha = 1;
+    }
     // player strip
     drawText(g, b.player.name, 150, 382, 14, "#ffffff");
     drawText(g, `LV ${b.player.level}`, 330, 382, 14, "#ffffff");
@@ -1169,7 +1230,7 @@ export class AshenGame {
       g.globalAlpha = a2;
       g.strokeStyle = "#3fd2ff"; g.lineWidth = 2; g.strokeRect(b.soul.x - 9, b.soul.y - 9, 18, 18);
       g.globalAlpha = 1;
-      drawText(g, "\u25C8 RESONANCE \u2014 the floor holds you up", VIEW_W / 2, 396, 10, "#7fe7ff", "center");
+      drawText(g, "[RESONANCE]", VIEW_W / 2, 396, 10, "#8fb4ff", "center");
     }
   }
 }

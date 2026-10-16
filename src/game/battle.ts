@@ -4,6 +4,7 @@
 // curve as the story tiles: the trained edge through, the idle get flattened.
 import { mkRng, clamp, rectsOverlap } from "./core";
 import { expectedCombat } from "../lib/story";
+import { MONARCH_PATHS } from "../data/monarchPaths";
 import { readinessFromFatigue } from "../lib/battle";
 import { ENEMY_LINES } from "./script";
 import type { Line } from "./script";
@@ -28,11 +29,18 @@ export interface EnemyDef {
 
 export type Phase =
   | "dialogue" | "menu" | "submenu" | "target" | "enemyTurn"
-  | "won" | "spared" | "fled" | "dead";
+  | "won" | "spared" | "fled" | "dead" | "extract";
+
+export interface BattlePlayer {
+  name: string; level: number; hp: number; maxHp: number; atk: number; def: number;
+  potions: number; carrots: number; treats: number; ramen: number;
+  /** Monarch lineage id, post-Job-Change only. Nothing before LV40 has one. */
+  path?: string;
+}
 
 export interface BattleState {
   enemy: EnemyDef & { hp: number; maxHp: number; spareable: boolean; actsUsed: string[] };
-  player: { name: string; level: number; hp: number; maxHp: number; atk: number; def: number; potions: number; carrots: number; treats: number; ramen: number };
+  player: BattlePlayer;
   phase: Phase;
   menu: 0 | 1 | 2 | 3; sub: number; subOpen: boolean;
   msgs: (Line | string)[]; msgIndex: number;
@@ -44,39 +52,105 @@ export interface BattleState {
   rng: () => number;
   shake: number; flash: number;
   hitInv: number;
-  result: null | { outcome: "win" | "spare" | "flee" | "death"; sp: number; gold: number; text: string };
-  flagsIn: { sparedHare?: boolean; sparedHound?: boolean; befriended?: string[]; sparedHob?: boolean; savedPair?: boolean; emberBond?: boolean; kangTaught?: boolean; chainedTusk?: boolean; }
+  result: null | { outcome: "win" | "spare" | "flee" | "death" | "claim"; sp: number; gold: number; text: string };
+  flagsIn: { canClaim?: boolean; sparedHare?: boolean; sparedHound?: boolean; befriended?: string[]; sparedHob?: boolean; savedPair?: boolean; emberBond?: boolean; kangTaught?: boolean; chainedTusk?: boolean; }
   enemyMood: number; // -1 hostile .. 1 warm — nudges lines & spare timing
   over: boolean;
   fightMsg?: string;
   resonance: boolean; // the System props up an over-leveled Player at half HP
   resonanceShown: boolean;
+  reviveUsed: boolean; // Clause 7 refuses death once per fight, no more
+  resFlash: number; // seconds left on the trigger banner (renderer cue)
+  canClaim: boolean; // set by the view; NEVER true before the Job Change
+  claimVerb: string; // the lineage's word: EXTRACT: ARISE, IMMOLATE, NAME...
+  claimAttempts: number; claimLocked: boolean; claimWindow: number;
   // internal sequencing
   _after?: string;
   _pattern?: string;
   _spawnT?: number;
   _waveT?: number;
+  _tier?: number;
 }
 
 const BOX = { x: 120, y: 250, w: 400, h: 120 };
 
-/** Build an enemy from the zone level, mirroring the story-tile difficulty curve. */
+/* ---------------- S1 power-curve rules (read the spec in STORY BIBLE order) ----------------
+ * 1. Foe stats are ALWAYS expectedCombat(level). No hidden boss multipliers,
+ *    no rubber-banding against the player. Bosses are walls because they are
+ *    AUTHORED at a fixed level, not because they get secret stat gifts.
+ * 2. RESONANCE: the System's fairness clause. Five full levels above a foe
+ *    and bleeding, it will not let you lose to that foe. Never at gap 4.
+ * 3. Claims (shadow extraction) exist only past the Job Change — see claimGate.
+ */
+
+/** The System's own words. The reason it gives is not the real reason. */
+export const RESONANCE_TEXT =
+  "[RESONANCE ACTIVE. Difficulty assist, Architect's Clause 7. The System does not watch you lose to something beneath you.]";
+
+export function resonanceApplies(playerLevel: number, foeLevel: number, hp: number, maxHp: number): boolean {
+  return playerLevel >= foeLevel + 5 && hp > 0 && hp <= maxHp * 0.5;
+}
+
+/** The adaptive wild: the floor decides WHAT lives there, the hunter decides
+ *  how hard it hits. playerLevel ± 1, minimum 1 — no band, no ceiling. */
+export function spawnLevelFor(playerLevel: number, rnd: () => number): number {
+  return Math.max(1, playerLevel + Math.floor(rnd() * 3) - 1);
+}
+
+/** Bullet-pattern tier — floors change the SHAPE of the danger, not the math. */
+export function patternTier(foeLevel: number): 1 | 2 | 3 | 4 {
+  if (foeLevel <= 9) return 1;
+  if (foeLevel <= 24) return 2;
+  if (foeLevel <= 39) return 3;
+  return 4;
+}
+
+/** Three bands, all bosses, authored levels: 3+ under = a verdict. */
+export function underdogFactor(playerLevel: number, foeLevel: number): number {
+  return playerLevel <= foeLevel - 3 ? 1.9 : 1;
+}
+
+/** ...and your strikes glance off what you are not ready for (never free kills). */
+export function underlevelCut(playerLevel: number, foeLevel: number): number {
+  const gap = foeLevel - playerLevel;
+  return gap <= 0 ? 1 : Math.max(0.045, 1 - 0.32 * gap);
+}
+
+/** Bosses — big boards and long turns, never secret stats. */
+export const BOSS_IDS = new Set(["kesh", "sentry", "architect", "hobgoblin", "sentinel", "irontusk", "alpha", "warden", "verity"]);
+
+/** Foes whose remnants may be claimed after the Job Change (S6/S7 authors these). */
+export const REMNANT_IDS = new Set<string>([]);
+
+/** The HARD GATE. Before the Job Change quest resolves, no shadow work — of
+ *  any lineage — exists for anyone, anywhere. Tests fail the build on this. */
+export function claimGate(level: number, path?: string | null): boolean {
+  return level >= 40 && !!path;
+}
+
+export function claimVerbFor(path?: string | null): string {
+  return MONARCH_PATHS.find((p) => p.id === path)?.claimVerb ?? "CLAIM";
+}
+
+/** Timing-ring tolerance: wider the further you've out-grown it, never 100%. */
+export function claimWindowFor(playerLevel: number, foeLevel: number): number {
+  return clamp(0.2 + (playerLevel - foeLevel) * 0.035 - foeLevel * 0.002, 0.08, 0.6);
+}
+
+/** Build an enemy from the zone level — straight off the story curve, nothing hidden. */
 export function makeEnemy(id: string, zoneLevel: number): EnemyDef {
-  const { combat } = expectedCombat(zoneLevel);
-  const u = combat.baseATK, hpP = combat.maxHP, defP = combat.baseDEF;
-  const boss = id === "kesh" || id === "architect" || id === "sentry";
-  const story = id === "wight";
-  const mult = boss ? 1.5 : story ? 1.12 : 1;
-  const div = boss ? 4.6 : 5.4;
+  const L = Math.max(1, Math.round(zoneLevel));
+  const { combat } = expectedCombat(L);
+  const boss = BOSS_IDS.has(id);
   const base: EnemyDef = {
-    id, name: "", zoneLevel,
-    hp: Math.round(u * 3.4 * mult),
-    atk: defP + Math.round(hpP / div),
-    def: Math.round(u * (boss ? 0.18 : 0.15)),
+    id, name: "", zoneLevel: L,
+    hp: combat.maxHP,
+    atk: combat.atk,
+    def: combat.def,
     patterns: PATTERNS[id]?.list ?? ["rain"],
     turnTime: boss ? 6.4 : 5.0,
     spareNeeds: SPARE[id] ?? [],
-    gold: boss ? 60 : 2 + Math.floor(zoneLevel / 4),
+    gold: boss ? 60 : 2 + Math.floor(L / 4),
     sp: boss ? (id === "sentry" ? 12 : 8) : 2,
     boss, noFlee: boss,
   };
@@ -123,7 +197,7 @@ const SPARE: Record<string, string[][]> = {
 
 export function createBattle(
   id: string,
-  player: { name: string; level: number; hp: number; maxHp: number; atk: number; def: number; potions: number; carrots: number; treats: number; ramen: number },
+  player: BattlePlayer,
   zoneLevel: number,
   seed: number,
   flagsIn: BattleState["flagsIn"] = {},
@@ -147,7 +221,9 @@ export function createBattle(
     flagsIn,
     enemyMood: 0,
     over: false,
-    resonance: false, resonanceShown: false,
+    resonance: false, resonanceShown: false, reviveUsed: false, resFlash: 0,
+    canClaim: !!flagsIn.canClaim, claimVerb: claimVerbFor(player.path),
+    claimAttempts: 0, claimLocked: false, claimWindow: 0,
   };
   st._after = "menu"; // the intro monologue hands you the menu, not an ambush
   // a town that already made peace recognizes you
@@ -179,11 +255,15 @@ export function menuItems(st: BattleState): { label: string; enabled: boolean }[
       { label: `DOG TREAT ×${st.player.treats} — throw a treat`, enabled: st.player.treats > 0 },
       { label: "Back", enabled: true },
     ];
-    case 3: return [
-      { label: "Spare", enabled: st.enemy.spareable },
-      { label: "Flee", enabled: !st.enemy.noFlee },
-      { label: "Back", enabled: true },
-    ];
+    case 3: {
+      const items = [
+        { label: "Spare", enabled: st.enemy.spareable },
+        { label: "Flee", enabled: !st.enemy.noFlee },
+      ];
+      if (st.canClaim) items.push({ label: st.claimVerb, enabled: !st.claimLocked });
+      items.push({ label: "Back", enabled: true });
+      return items;
+    }
   }
   return [];
 }
@@ -230,6 +310,7 @@ export function confirmAtMenu(st: BattleState) {
     if (st.menu === 2) doItem(st, it.label);
     if (st.menu === 3) {
       if (it.label === "Spare") return doSpare(st);
+      if (st.canClaim && it.label === st.claimVerb) return beginClaim(st);
       return doFlee(st);
     }
   } else if (st.phase === "menu") {
@@ -301,6 +382,38 @@ function doFlee(st: BattleState) {
   }
 }
 
+// ---------------- claims — the lineage's word on a kneeling name ----------------
+
+export function beginClaim(st: BattleState) {
+  if (!st.canClaim || st.claimLocked) return;
+  st.claimAttempts++;
+  st.claimWindow = claimWindowFor(st.player.level, st.enemy.zoneLevel);
+  pushMsg(st, [{
+    text: `${st.claimVerb} — hold the marker inside the ring. ${3 - st.claimAttempts} chances left.`,
+  }], "extract");
+  st.bar = { pos: 0, dir: 1, locked: null };
+}
+
+export function resolveClaim(st: BattleState) {
+  if (st.phase !== "extract" || st.bar.locked !== null) return;
+  st.bar.locked = st.bar.pos;
+  if (Math.abs(st.bar.pos) <= st.claimWindow) {
+    st.phase = "won";
+    st.msgs = [{ text: "The ring closes and holds." }, { text: `${st.enemy.name} rises wearing your lineage's word. The folder clicks shut.` }];
+    st.msgIndex = 0;
+    st.result = { outcome: "claim", sp: 2, gold: 4 + st.enemy.zoneLevel * 2, text: "claimed" };
+    st.over = true;
+    return;
+  }
+  if (st.claimAttempts >= 3) {
+    st.claimLocked = true;
+    pushMsg(st, [{ text: "Three attempts. The System files the name under LOST and closes the folder. Nothing is said about it, which is the loud part." }], "enemy");
+    return;
+  }
+  pushMsg(st, [{ text: "It slips sideways out of the ring. The System widens the window a little and mentions this to no one." }], "extract");
+  st.bar = { pos: 0, dir: 1, locked: null };
+}
+
 function refreshSparable(st: BattleState) {
   const needs = st.enemy.spareNeeds;
   st.enemy.spareable = needs.length > 0 && needs.every((group) => group.some((a) => st.enemy.actsUsed.includes(a)));
@@ -319,6 +432,8 @@ export function lockBar(st: BattleState) {
   let dmg = Math.max(1, Math.round(st.player.atk * mult) - st.enemy.def);
   if (perfect) dmg = Math.round(dmg * 1.25);
   if (st.enemyMood >= 2) dmg = Math.round(dmg * 0.85); // it flinches, you feel it
+  const cut = underlevelCut(st.player.level, st.enemy.zoneLevel);
+  if (cut < 1) dmg = Math.max(1, Math.round(dmg * cut)); // you may NOT brute-force a wall
   st.enemy.hp = Math.max(0, st.enemy.hp - dmg);
   st.fightMsg = perfect ? `PERFECT — ${dmg}!` : `You strike for ${dmg}.`;
   st.shake = 8;
@@ -377,7 +492,16 @@ export function beginEnemyTurn(st: BattleState) {
   if ((st.enemy.id === "wight" || st.enemy.id === "architect") && st.turn >= 2) {
     st.box = { x: BOX.x + 130, y: BOX.y, w: BOX.w - 260, h: BOX.h };
   } else st.box = { ...BOX };
-  st._pattern = PATTERNS[st.enemy.id]?.list[(st.turn - 1) % (PATTERNS[st.enemy.id]?.list.length ?? 1)] ?? "rain";
+  const tier = patternTier(st.enemy.zoneLevel);
+  st._tier = tier;
+  const base = PATTERNS[st.enemy.id]?.list ?? ["rain"];
+  const extra = tier === 1 ? [] : tier === 2 ? ["aimed"] : tier === 3 ? ["aimed", "sweep", "burst"] : ["aimed", "sweep", "burst", "crossfire"];
+  const pool = base.concat(extra);
+  let pat = base[(st.turn - 1) % base.length];
+  if (tier >= 2 && extra.length && st.rng() < 0.22 + tier * 0.1) {
+    pat = pool[base.length + Math.floor(st.rng() * extra.length)]; // the floor escalates mid-fight
+  }
+  st._pattern = pat;
 }
 
 export function advanceDialogue(st: BattleState) {
@@ -386,6 +510,7 @@ export function advanceDialogue(st: BattleState) {
     const after = (st as BattleState & { _after?: string })._after;
     (st as BattleState & { _after?: string })._after = undefined;
     if (after === "menu") { st.phase = "menu"; st.subOpen = false; }
+    else if (after === "extract") { st.phase = "extract"; st.bar = { pos: 0, dir: 1, locked: null }; }
     else beginEnemyTurn(st);
   }
 }
@@ -403,7 +528,7 @@ export interface StepInput { up: boolean; down: boolean; left: boolean; right: b
 export function campaignStats(level: number, str: number, _agi: number, vit: number, fatigue: number) {
   const rdy = readinessFromFatigue(fatigue);
   return {
-    maxHP: Math.max(8, Math.round((24 + 7 * level + 1.5 * vit) * rdy.hpMultiplier)),
+    maxHP: Math.max(8, Math.round((5 + 7 * level + 1.6 * vit) * rdy.hpMultiplier)),
     atk: Math.max(3, Math.round((6 + 2 * level + 1.2 * str) * rdy.atkMultiplier)),
     def: Math.max(0, Math.round((2 + 0.75 * level + 0.4 * vit) * rdy.defMultiplier)),
   };
@@ -416,16 +541,21 @@ export function stepBattle(st: BattleState, input: StepInput, dt: number): Battl
   st.hitInv = Math.max(0, st.hitInv - dt);
   if (st.over) return st;
 
-  // RESONANCE — the System's fairness clause: if you out-train this monster by
-  // two real-world levels, being bad at the game is allowed to hurt but not to
-  // kill. It knits you back at half health. If you are UNDER-leveled, nothing
-  // saves you, because the point was never the dungeon.
-  st.resonance = st.player.level - st.enemy.zoneLevel >= 2 && st.player.hp > 0 && st.player.hp <= st.player.maxHp * 0.5;
-  if (st.resonance) st.player.hp = Math.min(st.player.maxHp, st.player.hp + st.player.maxHp * 0.055 * dt);
+  // RESONANCE — five full real-world levels above a thing, at half health or
+  // worse, and the System declines to watch you lose to it: mends 8% max HP a
+  // second, softens every bullet, and refuses ONE death per fight. Gap 4 buys
+  // nothing — you earn the fifth. It never explains why. The point was never
+  // the dungeon.
+  st.resonance = resonanceApplies(st.player.level, st.enemy.zoneLevel, st.player.hp, st.player.maxHp);
+  if (st.resonance) {
+    st.player.hp = Math.min(st.player.maxHp, st.player.hp + st.player.maxHp * 0.08 * dt);
+    if (!st.resonanceShown) { st.resonanceShown = true; st.resFlash = 3.4; }
+  }
+  st.resFlash = Math.max(0, st.resFlash - dt);
 
-  if (st.phase === "target") {
+  if (st.phase === "target" || st.phase === "extract") {
     if (st.bar.locked === null) {
-      st.bar.pos += st.bar.dir * dt * 1.85;
+      st.bar.pos += st.bar.dir * dt * (st.phase === "extract" ? 2.35 : 1.85);
       if (st.bar.pos > 1) { st.bar.pos = 1; st.bar.dir = -1; }
       if (st.bar.pos < -1) { st.bar.pos = -1; st.bar.dir = 1; }
     }
@@ -466,11 +596,21 @@ export function stepBattle(st: BattleState, input: StepInput, dt: number): Battl
     for (const p of st.bullets) {
       if (p.windup > 0) continue;
       if (rectsOverlap(st.soul.x - SW / 2, st.soul.y - SH / 2, SW, SH, p.x - p.w / 2, p.y - p.h / 2, p.w, p.h)) {
-        const dmg = Math.max(1, Math.round(st.enemy.atk * 0.32 - st.player.def * 0.18));
+        let dmg = Math.max(1, Math.round(st.enemy.atk * 0.32 - st.player.def * 0.18));
+        dmg = Math.max(1, Math.round(dmg * underdogFactor(st.player.level, st.enemy.zoneLevel)));
+        if (st.resonance) dmg = Math.max(1, Math.round(dmg * 0.35)); // the clause softens the room
         st.player.hp = Math.max(0, st.player.hp - dmg);
-        st.hitInv = 0.7;
+        st.hitInv = st.resonance ? 1.2 : 0.7;
         st.flash = 1;
         if (st.player.hp <= 0) {
+          if (st.resonance && !st.reviveUsed) {
+            st.reviveUsed = true;
+            st.player.hp = Math.max(1, Math.round(st.player.maxHp * 0.25));
+            st.bullets = [];
+            st.hitInv = 1.6;
+            pushMsg(st, [{ text: "You die. The hand on the shoulder declines the paperwork. You stand up at a quarter, and the System marks the clause USED." }], "menu");
+            return st;
+          }
           st.phase = "dead"; st.over = true;
           st.result = { outcome: "death", sp: 0, gold: 0, text: "died" };
           return st;
@@ -497,8 +637,14 @@ function spawnFor(st: BattleState, dt: number) {
   const b = st.box;
   const r = st.rng;
   const p = st._pattern;
-  const speed = 70 + st.enemy.zoneLevel * 3 + st.turn * 6;
-  const S = (o: Partial<Bullet>) => st.bullets.push({ x: 0, y: 0, vx: 0, vy: 0, w: 8, h: 8, shape: "rect", ttl: 9, windup: 0, ...o } as Bullet);
+  const tier = st._tier ?? 1;
+  const speed = (70 + st.enemy.zoneLevel * 3 + st.turn * 6) * (1 + 0.08 * (tier - 1));
+  const windupScale = tier >= 4 ? 0.7 : 1; // T4 telegraphs are SHORTER, not polite
+  const S = (o: Partial<Bullet>) => {
+    const bt = { x: 0, y: 0, vx: 0, vy: 0, w: 8, h: 8, shape: "rect", ttl: 9, windup: 0, ...o } as Bullet;
+    bt.windup = (o.windup ?? 0) * windupScale;
+    st.bullets.push(bt);
+  };
 
   if (p === "rain") { // icicles from the top with safe pockets
     if (st._spawnT > 0.22) {
@@ -560,6 +706,38 @@ function spawnFor(st: BattleState, dt: number) {
         const x = b.x + 16 + ((b.w - 32) / (n - 1 || 1)) * i + (r() - 0.5) * 10;
         S({ x, y: b.y + b.h + 8, vy: -speed * 0.9, w: 12, h: 12, windup: 0.35, color: "#d8a06a", grow: 12, ttl: 3.2 });
       }
+    }
+  } else if (p === "aimed") { // T2+: three telegraphed lines at where you ARE
+    if (st._spawnT > 0.9) {
+      st._spawnT = 0;
+      const n = tier >= 3 ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const a = Math.atan2(st.soul.y - (b.y + b.h / 2), st.soul.x - (b.x + b.w / 2)) + (i - (n - 1) / 2) * 0.24;
+        S({ x: b.x + b.w / 2 - Math.cos(a) * (b.w / 2 + 14), y: b.y + b.h / 2 - Math.sin(a) * (b.h / 2 + 26), vx: Math.cos(a) * speed * 1.2, vy: Math.sin(a) * speed * 1.2, w: 7, h: 7, shape: "circle", color: "#ffd0a0", windup: 0.5 });
+      }
+    }
+  } else if (p === "sweep") { // T3: a full-height lane sweep with one gap to run
+    if (st._spawnT > 1.9) {
+      st._spawnT = 0;
+      const gap = b.y + 12 + r() * (b.h - 44);
+      const fromLeft = r() < 0.5;
+      S({ x: fromLeft ? b.x - 10 : b.x + b.w + 10, y: b.y - 4, w: 10, h: gap - b.y + 4, vx: (fromLeft ? 1 : -1) * speed * 0.85, color: "#a0b8e8" });
+      S({ x: fromLeft ? b.x - 10 : b.x + b.w + 10, y: gap + 26, w: 10, h: b.y + b.h - gap - 22, vx: (fromLeft ? 1 : -1) * speed * 0.85, color: "#a0b8e8" });
+    }
+  } else if (p === "burst") { // T3: delayed clusters — the floor marks them first
+    if (st._spawnT > 1.6) {
+      st._spawnT = 0;
+      for (let i = 0; i < 6; i++) {
+        S({ x: b.x + 12 + r() * (b.w - 24), y: b.y + 10 + r() * (b.h - 20), w: 9, h: 9, shape: "circle", color: "#ffb0d8", windup: 1.05, ttl: 4.2 });
+      }
+    }
+  } else if (p === "crossfire") { // T4: opposing volleys over a thin rain
+    if (st._spawnT > 0.55) {
+      st._spawnT = 0;
+      const y1 = b.y + 10 + r() * (b.h - 20);
+      S({ x: b.x - 12, y: y1, w: 16, h: 7, vx: speed * 1.6, color: "#ffd0d8" });
+      S({ x: b.x + b.w + 12, y: b.y + b.h - (y1 - b.y), w: 16, h: 7, vx: -speed * 1.6, color: "#ffd0d8" });
+      if (r() < 0.35) S({ x: b.x + 10 + r() * (b.w - 20), y: b.y - 10, w: 6, h: 12, vy: speed * 1.2, windup: 0.12, color: "#bfe8ff" });
     }
   }
 }
