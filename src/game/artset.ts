@@ -146,7 +146,9 @@ export class ArtSet {
     this.pending.add(key);
     const e = this.entries.get(key);
     if (!e?.file) { this.markMissing(key, label, kind); this.pending.delete(key); return; }
-    const img = await loadImage(this.bust ? `${e.file}?art=${this.bust}` : e.file);
+    const src0 = this.urlFor(key) ?? e.file; // must go through urlFor: manifest stores paths relative to public/art/
+    const src = this.bust ? `${src0}${src0.includes("?") ? "&" : "?"}art=${this.bust}` : src0;
+    const img = await loadImage(src);
     this.pending.delete(key);
     if (!img) { this.markMissing(key, label, kind); return; }
     const scale = e.scale ?? 1;

@@ -1,4 +1,25 @@
 {
-  "$comment": "See ART_SPEC.md. Drop files under public/art/ and point keys at them; the game hot-swaps art with zero code changes.",
-  "assets": {}
+  "$generated": "public/art/manifest.json is rewritten from disk by scripts/artlink.mts — drop files per ART_SPEC.md, run npx tsx scripts/artlink.mts, done.",
+  "assets": {
+    "actor:hermit:front": "actors/hermit/front.png",
+    "actor:kang:front": "actors/kang/front.png",
+    "actor:miso:front": "actors/miso/front.png",
+    "actor:seo:front": "actors/seo/front.png",
+    "actor:sila:front": "actors/sila/front.png",
+    "floor:ashenveil:ground": "floors/ashenveil/ground.png",
+    "floor:caverns:ground": "floors/caverns/ground.png",
+    "floor:citadel:ground": "floors/citadel/ground.png",
+    "floor:marsh:ground": "floors/marsh/ground.png",
+    "floor:verdant:ground": "floors/verdant/ground.png",
+    "actor:hermit:back": "actors/hermit/front.png",
+    "actor:hermit:side": "actors/hermit/front.png",
+    "actor:kang:back": "actors/kang/front.png",
+    "actor:kang:side": "actors/kang/front.png",
+    "actor:miso:back": "actors/miso/front.png",
+    "actor:miso:side": "actors/miso/front.png",
+    "actor:seo:back": "actors/seo/front.png",
+    "actor:seo:side": "actors/seo/front.png",
+    "actor:sila:back": "actors/sila/front.png",
+    "actor:sila:side": "actors/sila/front.png"
+  }
 }

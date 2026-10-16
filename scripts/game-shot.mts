@@ -22,6 +22,20 @@ const elemStub = () => ({
   body: { appendChild() {} },
   addEventListener() {}, removeEventListener() {},
 };
+// serve /art/... like the vite public/ root would, so manifest-driven art is visible headless
+import { readFileSync } from "node:fs";
+const origFetch = (globalThis as never as { fetch?: typeof fetch }).fetch;
+(globalThis as never as Record<string, unknown>).fetch = (input: unknown, ...rest: unknown[]) => {
+  const u = String((input as { url?: string })?.url ?? input);
+  if (u.startsWith("/") || u.startsWith("art/")) {
+    const path = `public/${u.replace(/^\//, "").split("?")[0]}`;
+    try {
+      const buf = readFileSync(path);
+      return Promise.resolve(new Response(buf, { status: 200, headers: { "Content-Type": path.endsWith(".json") ? "application/json" : "image/png" } }));
+    } catch { return Promise.resolve(new Response(null, { status: 404 })); }
+  }
+  return (origFetch as (...a: unknown[]) => unknown)!(input, ...rest);
+};
 class FakeImage {
   onload: (() => void) | null = null;
   width = 0; height = 0;
@@ -29,7 +43,7 @@ class FakeImage {
   private _src = "";
   set src(v: string) {
     this._src = v;
-    const path = v.startsWith("/") ? `.${v}` : `public/${v}`;
+    const path = v.startsWith("/") ? `public${v}` : `public/${v}`;
     loadImage(path).then((c) => {
       this.__canvas = c; this.width = c.width; this.height = c.height;
       this.onload?.();
@@ -316,7 +330,7 @@ A.showColl = false;
 
 // ═══════════ WORLD V2 DELIVERABLE: every placeholder floor × F3 overlay ═══════════
 for (const fid of ["verdant", "marsh", "caverns", "citadel", "ashenveil"]) {
-  jump(fid); await frames(18);
+  jump(fid); await new Promise((r) => setTimeout(r, 450)); await frames(10);
   shot(`70-floor-${fid}`);
   A.showColl = true; await frames(3);
   shot(`71-floor-${fid}-f3`);
@@ -369,7 +383,7 @@ console.log("saved 30-sprite-atlas");
   (A.commitCreator as () => void).call(g);
   await frames(4);
   (A.jumpToFloor as (id: string) => void).call(g, "verdant");
-  await frames(12);
+  await new Promise((r) => setTimeout(r, 500)); await frames(12);
   // objective pointer: the check-in marker + distance label
   A.pointerOn = true;
   await frames(6);

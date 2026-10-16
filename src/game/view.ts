@@ -119,7 +119,10 @@ export class AshenGame {
     if (typeof document !== "undefined") this.buildSprites();
     // ART V3: manifest first; dev builds poll for hot-reloaded art. When any file
     // changes, every art cache in this class is rebuilt — no code edit needed.
-    void Art.loadManifest().then(() => this.buildSprites());
+    void Art.loadManifest().then(() => {
+      this.buildSprites();
+      void loadFloorArt(this.floor); // art that existed at boot is now wired — re-run the layer loader
+    });
     if (this.isDevBuild()) {
       Art.startDevReload();
       (window as unknown as Record<string, unknown>).__art = Art; // console access in dev

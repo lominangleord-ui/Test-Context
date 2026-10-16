@@ -36,3 +36,4 @@ pnpm-debug.log*
 
 # headless screenshot harness output
 shots/
+public/art/_raw/

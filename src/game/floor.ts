@@ -212,6 +212,7 @@ export function placeholderGround(floor: Floor): HTMLCanvasElement | null {
   g.font = `${Math.round(c.height / 26)}px "Share Tech Mono", monospace`;
   g.fillStyle = "rgba(220,232,255,0.10)";
   g.fillText("placeholder ground — drop public/art/floors/" + floor.id + "/ art to replace it", c.width / 2, c.height / 2 + c.height / 10);
+  (c as never as { __ph: boolean }).__ph = true;
   return c;
 }
 
