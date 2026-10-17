@@ -214,6 +214,7 @@ function run(id: string) {
   };
   const rect = (r: number[], v: number) => { for (let cy = Math.max(0, Math.floor(r[1] / CELL)); cy <= Math.min(CH - 1, Math.floor((r[1] + r[3]) / CELL)); cy++) for (let cx = Math.max(0, Math.floor(r[0] / CELL)); cx <= Math.min(CW - 1, Math.floor((r[0] + r[2]) / CELL)); cx++) cells[cy * CW + cx] = v; };
   const disc = (r: number[], v: number) => { for (let cy = Math.max(0, Math.floor((r[1] - r[2]) / CELL)); cy <= Math.min(CH - 1, Math.ceil((r[1] + r[2]) / CELL)); cy++) for (let cx = Math.max(0, Math.floor((r[0] - r[2]) / CELL)); cx <= Math.min(CW - 1, Math.ceil((r[0] + r[2]) / CELL)); cx++) { const px = cx * CELL + 2, py = cy * CELL + 2; if ((px - r[0]) ** 2 + (py - r[1]) ** 2 <= r[2] * r[2]) cells[cy * CW + cx] = v; } };
+  const ellip = (r: number[], v: number) => { for (let cy = Math.max(0, Math.floor((r[1] - r[3]) / CELL)); cy <= Math.min(CH - 1, Math.ceil((r[1] + r[3]) / CELL)); cy++) for (let cx = Math.max(0, Math.floor((r[0] - r[2]) / CELL)); cx <= Math.min(CW - 1, Math.ceil((r[0] + r[2]) / CELL)); cx++) { const px = cx * CELL + 2, py = cy * CELL + 2; if (((px - r[0]) / r[2]) ** 2 + ((py - r[1]) / r[3]) ** 2 <= 1) cells[cy * CW + cx] = v; } };
   const road = (pts: number[][], w: number) => { for (let i = 0; i < pts.length - 1; i++) { const [x0, y0] = pts[i], [x1, y1] = pts[i + 1]; const len = Math.hypot(x1 - x0, y1 - y0); for (let t = 0; t <= len; t += w * 0.4) disc([x0 + ((x1 - x0) * t) / len, y0 + ((y1 - y0) * t) / len, w / 2], 0); disc([x1, y1, w / 2], 0); } };
 
   for (const p of spec.water ?? []) paintPoly(p, 2);
@@ -229,8 +230,12 @@ function run(id: string) {
   const o = JSON.parse(readFileSync(`public/art/floors/${id}/objects.json`, "utf8"));
   // prop colliders block; interact props get an open pad so their trigger is reachable
   for (const p of o.props ?? []) {
-    if (p.solid === "rect") rect([p.x, p.y, p.w, p.h], 1);
-    else if (p.solid === "ellipse") disc([p.x + p.w / 2, p.y + p.h / 2, Math.max(p.w, p.h) / 2], 1);
+    // colliders hug the SILHOUETTE, not the sprite slot: the foot box is 20x12u,
+    // and a full rect around a thin tree (or a CIRCLE r=max(w,h)/2 around a boat)
+    // reads to players as an invisible wall. Inset, and stamp real ellipses.
+    const ix = Math.min(10, Math.max(2, p.w * 0.16)), iy = Math.min(8, Math.max(1, p.h * 0.12));
+    if (p.solid === "rect") rect([p.x + ix, p.y + iy, Math.max(CELL * 2, p.w - ix * 2), Math.max(CELL * 2, p.h - iy * 2)], 1);
+    else if (p.solid === "ellipse") ellip([p.x + p.w / 2, p.y + p.h / 2, Math.max(CELL, p.w / 2 - ix), Math.max(CELL, p.h / 2 - iy)], 1);
     disc([p.x + p.w / 2, p.y + p.h + 6, 20], 0);
   }
   const pad = (x: number, y: number, r: number, v: number) => disc([x, y, r], v);

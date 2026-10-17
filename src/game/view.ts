@@ -110,10 +110,17 @@ export class AshenGame {
     this.hasSave = !!save;
     this.regionId = save?.region ?? "verdant";
     this.flags = save ? { ...freshFlags(), ...save.flags } : freshFlags();
+    // A pre-campaign save parked the player on the legacy prototype map — grid
+    // walls, no quests, a den that only says 'quiet'. Re-file them at the real
+    // beginning; the rest of the ledger (gold, titles, flags) stays intact.
+    const vf = (this.flags as unknown as { visitedFloors?: Record<string, boolean> }).visitedFloors;
+    if (!FLOOR_IDS_LIST.includes(this.regionId) || (this.regionId === "ashenveil" && !vf?.ashenveil && !this.flags.unregistered)) this.regionId = "verdant";
     this.floor = makeFloor(this.regionId);
     this.floor.art.ground = placeholderGround(this.floor);
-    this.px = save?.x ?? this.floor.objects.spawn[0];
-    this.py = save?.y ?? this.floor.objects.spawn[1];
+    const parkedHere = !!save && save.region === this.regionId;
+    this.px = parkedHere ? save!.x : this.floor.objects.spawn[0];
+    this.py = parkedHere ? save!.y : this.floor.objects.spawn[1];
+    if (!(this.px >= 0 && this.px <= this.floor.w && this.py >= 0 && this.py <= this.floor.h)) { this.px = this.floor.objects.spawn[0]; this.py = this.floor.objects.spawn[1]; }
     this.lastSafe = { x: this.px, y: this.py };
     if (save) this.toast = { text: WELCOME_BACK[0].text, t: 4.5 };
     this.centerCam();
@@ -419,14 +426,20 @@ export class AshenGame {
     }
     if (hit.kind === "prop" && hit.key === "den") {
       if (!(this.flags.killsTotal >= 14) || this.flags.bossDown["alpha"]) {
-        this.pages = { lines: [{ text: "The den is quiet. Whatever lives in den-logic has not decided you are an audience yet." }], idx: 0, t: 0 };
+        this.pages = { lines: [{ who: "SYSTEM", text: `THE DEN IS NOT OPEN: it wakes at 14 settled names across the floors — the ledger says ${this.flags.killsTotal ?? 0}. Kills, spares and claims all count.` }, { text: "The den is quiet. Whatever lives in den-logic has not decided you are an audience yet. The journal [J] keeps the tally; the pointer will show the zones worth walking through." }], idx: 0, t: 0 };
         this.mode = "talk"; return;
       }
       const lvA = useGame.getState().level;
       const decA = bossGateDecision({ playerLevel: lvA, recLevel: 24, hubSeen: (this.flags.met["seo.verdant"] ?? 0) > 0 });
       if (decA === "block") {
-        this.pages = { lines: bossGateLines("THE ALPHA", 24, lvA, "block"), idx: 0, t: 0 };
-        this.mode = "talk"; Sfx.open(); return;
+        this.choice = {
+          lines: bossGateLines("THE ALPHA", 24, lvA, "block"), idx: 0, t: 0, sel: 0,
+          opts: [
+            { label: "BACK OUT — TRAIN FIRST", run: () => this.toastNow("[SYSTEM] The den notes your prudence and files it.") },
+            { label: `FIGHT IT ANYWAY — LV ${lvA} VS LV 24`, run: () => this.proceedDenAlpha() },
+          ],
+        };
+        this.mode = "choice"; Sfx.open(); return;
       }
       if (decA === "warn") {
         this.choice = {
@@ -495,10 +508,17 @@ export class AshenGame {
     const hubSeen = (this.flags.met["seo.verdant"] ?? 0) > 0;
     const decision = bossGateDecision({ playerLevel: lv, recLevel: bo.level, hubSeen });
     if (decision === "block") {
+      // The hard gate is an exam, not a wall: full explanation first, then a real
+      // decision with BACK OUT pre-selected. A challenge never ends in "nothing".
       Sfx.open();
-      this.pagesActor = null;
-      this.pages = { lines: bossGateLines(bo.name.toUpperCase(), bo.level, lv, "block"), idx: 0, t: 0 };
-      this.mode = "talk";
+      this.choice = {
+        lines: bossGateLines(bo.name.toUpperCase(), bo.level, lv, "block"), idx: 0, t: 0, sel: 0,
+        opts: [
+          { label: "BACK OUT — TRAIN FIRST", run: () => this.toastNow("[SYSTEM] Filed under: PRUDENT. The ledger respects it.") },
+          { label: `SIGN IT ANYWAY — LV ${lv} VS LV ${bo.level}`, run: () => this.proceedBoss(bo.id, bo.level) },
+        ],
+      };
+      this.mode = "choice";
       return;
     }
     if (decision === "warn") {
@@ -813,7 +833,7 @@ export class AshenGame {
       // narration settles on its own; choices and dialogue wait for you
       if (p.t * TYPE_RATE > pageLen + 30) {
         if (pg < pages.length - 1) { p.pg = pg + 1; p.t = 0; }
-        else { p.pg = 0; p.idx++; p.t = 0; if (p.idx >= p.lines.length) { this.pages = null; onDone(); } }
+        else { p.pg = 0; p.idx++; p.t = 0; if (p.idx >= p.lines.length) { const a = p.after; this.pages = null; onDone(); a?.(); } }
       }
     }
     if (this.input.pressed("confirm")) {
@@ -821,7 +841,7 @@ export class AshenGame {
       else if (pg < pages.length - 1) { p.pg = pg + 1; p.t = 0; Sfx.select(); }
       else {
         p.pg = 0; p.idx++; p.t = 0;
-        if (p.idx >= p.lines.length) { this.pages = null; Sfx.select(); onDone(); }
+        if (p.idx >= p.lines.length) { const a = p.after; this.pages = null; Sfx.select(); onDone(); a?.(); }
       }
     }
   }
@@ -1728,8 +1748,14 @@ export class AshenGame {
     const decision = bossGateDecision({ playerLevel: lv, recLevel: rec, hubSeen });
     if (decision === "block") {
       Sfx.open();
-      this.pages = { lines: bossGateLines(gen ? "THE FINAL SENTRY" : "KESH, THE MONEYBOSS", rec, lv, "block"), idx: 0, t: 0 };
-      this.mode = "talk";
+      this.choice = {
+        lines: bossGateLines(gen ? "THE FINAL SENTRY" : "KESH, THE MONEYBOSS", rec, lv, "block"), idx: 0, t: 0, sel: 0,
+        opts: [
+          { label: "BACK OUT — TRAIN FIRST", run: () => this.toastNow("[SYSTEM] Filed under: PRUDENT. The ledger respects it.") },
+          { label: `CROSS THE THRESHOLD ANYWAY — LV ${lv} VS LV ${rec}`, run: () => this.proceedArch() },
+        ],
+      };
+      this.mode = "choice";
       return;
     }
     if (decision === "warn") {

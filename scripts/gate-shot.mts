@@ -120,6 +120,14 @@ shot("91-gate-verdant-prompt");
 A.interact(); await frames(80);
 shot("92-gate-verdant-block");
 console.log("mode after block:", A.mode);
+for (let i = 0; i < 6; i++) { A.input.press("confirm", true); await frames(3); A.input.press("confirm", false); await frames(4); }
+shot("96-gate-block-exam-choice");
+console.log("mode after block pages:", A.mode);
+A.input.press("down", true); await frames(3); A.input.press("down", false); await frames(2);
+A.input.press("confirm", true); await frames(3); A.input.press("confirm", false); await frames(6);
+for (let i = 0; i < 40 && A.mode !== "battle"; i++) { console.log("walk", i, A.mode, "pagesIdx", (A.pages as { idx?: number } | null)?.idx, (A.pages as { lines?: unknown[] } | null)?.lines?.length); A.input.press("confirm", true); await frames(3); A.input.press("confirm", false); await frames(3); }
+shot("97-gate-sign-anyway-battle");
+console.log("mode after SIGN ANYWAY:", A.mode);
 
 // hub check-in seen once -> soft warn with sign/back-out choice
 (A.flags as { met: Record<string, number> }).met["seo.verdant"] = 1;

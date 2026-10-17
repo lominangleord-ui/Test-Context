@@ -103,3 +103,16 @@ F2 editor. Coordinates are ground.png px (= world units, 1920×1080).
 36. BOSS LADDER retuned to actual play speed: verdant 3, marsh 7, caverns 13, citadel 17,
     ashenveil arch 8 (genocide: 24), alpha den 24 — one number per boss, in objects.json
     AND floor.ts defaults (keep them in sync; gate.test.ts checks the ladder climbs).
+37. THE SILENT `after:` BUG (fixed): updatePages finished dialogues by calling onDone ->
+    pageAfter only. Every page that embeds `after:` (boss gate -> beginBattle, bossAfter ->
+    ceremony/save/unlock, shop intro/return, CREATION_INTRO -> openCreator, architect) had
+    been finishing into the void — the flow ended and nothing happened. Both completion
+    paths (auto-settle and confirm) now capture and fire pages.after AFTER onDone, so the
+    callback's own mode wins. That single bug was the whole "challenge never starts".
+38. Legacy saves: a save parked on the prototype map (region ashenveil without the campaign
+    behind it) is re-filed to verdant at boot; flags/gold/ledger stay intact.
+39. Prop colliders hug the silhouette: rect props inset ~16%/12% per side (min 2/1u, cap
+    10/8u) and ellipse props stamp a TRUE ellipse instead of a max(w,h)/2 circle — the foot
+    box is 20x12u, so full-slot boxes around thin props read as invisible walls.
+40. The den's "quiet" now states its requirement and your progress (killsTotal vs 14);
+    hard-gate refusals end in a real BACK OUT / SIGN ANYWAY choice, never in nothing.
