@@ -31,7 +31,7 @@ const HUNTER_CLASS_IDS: GameClassId[] = ["fighter", "mage", "assassin", "ranger"
 import { findMove, moveUnlockReason, pathMoves, spendMovePoints } from "../lib/moves";
 import { classSkills, defaultClassFor, getClass } from "../data/classes";
 import { getEpisode } from "../data/story";
-import { episodeAvailability, nextSkillReward, skillLockReason, spendSkillPoints } from "../lib/story";
+import { episodeAvailability, skillLockReason, spendSkillPoints } from "../lib/story";
 import {
   PENALTY_MS,
   SAVE_KEY,
@@ -39,6 +39,7 @@ import {
   todayISO,
 } from "../lib/utils";
 import { audio, startDrone, stopDrone, voice } from "../lib/audio";
+import { defaultAppearance, normalizeAppearance, type Appearance } from "../game/appearance";
 import { shake, flash, fct, fctBurst } from "../lib/juice";
 import { grantLoot } from "../lib/loot";
 import { awardXP } from "../lib/progression";
@@ -69,6 +70,9 @@ interface Actions {
   learnMove: (id: string) => void;
   setTab: (t: Tab) => void;
   setAvatar: (a: string) => void;
+  /** The in-game mirror creator: commits name + paper-doll look in one stroke. */
+  setLook: (name: string, ap: Appearance) => void;
+  cycleGuidance: () => void;
   // quest
   getTargets: () => Record<ExerciseKey, number>;
   getPenaltyTargets: () => PenaltyTargets;
@@ -79,6 +83,7 @@ interface Actions {
   allocateStat: (stat: StatKey) => void;
   // economy
   buyPotion: () => void;
+  awardBattle: (sp: number, gold: number, xp?: number) => void;
   buyItem: (id: number) => void;
   equipItem: (id: number) => void;
   consumePotion: () => void;
@@ -137,8 +142,10 @@ function defaultState(): GameState {
     name: "",
     archetype: "balanced",
     avatar: "/avatars/hunter-1.jpg",
+    appearance: defaultAppearance(""),
     level: 1,
     pts: 3,
+    sp: 0,
     streak: 0,
     hp: hpMax,
     hpMax,
@@ -207,6 +214,7 @@ function defaultState(): GameState {
       floatingNumbers: true,
       remindersEnabled: false,
       fastMode: false,
+      guidance: "full",
     },
     pact: {
       active: false,
@@ -252,6 +260,10 @@ export function normalizeSave(input: unknown): GameState {
       (fresh.settings as unknown as Record<string, unknown>)[key] = value;
     }
   }
+
+  fresh.appearance = normalizeAppearance(saved.appearance);
+  if (typeof saved.name === "string" && saved.name && !saved.appearance) fresh.appearance.name = saved.name;
+  if (typeof fresh.appearance.name !== "string" || !fresh.appearance.name) fresh.appearance.name = typeof saved.name === "string" ? saved.name.slice(0, 14) : "";
 
   fresh.archetype = saved.archetype && Object.prototype.hasOwnProperty.call(ARCHETYPES, String(saved.archetype))
     ? saved.archetype as ArchetypeId
@@ -377,6 +389,29 @@ export function normalizeSave(input: unknown): GameState {
   fresh.screen = fresh.name ? "main" : "intro";
   fresh.tab = "quest";
   fresh.notifications = [];
+  // Transient UI flags must never survive a reload (these are on the FxState slice,
+  // not GameState; they are reset in importState/hardReset/onRehydrate).
+  fresh.rewardChoicePending = false;
+  // Saves written before the SP split have cleared tiles but never meted out the
+  // skill-point income those tiles owe. Retroactively grant what a full ledger of
+  // first clears would have paid, then subtract what the tree has already consumed
+  // (starter skills are free and never charged).
+  if (typeof saved.sp !== "number") {
+    const earned = fresh.storyCleared.reduce((total: number, level: number) => {
+      const ep = getEpisode(level);
+      if (!ep) return total;
+      return total + (ep.kind === "job" ? 0 : ep.kind === "field" ? 1 : 2);
+    }, 0);
+    const spentOnSkills = classSkills(fresh.gameClass)
+      .filter((skill) => !skill.starter && fresh.basicSkills.includes(skill.id))
+      .reduce((total: number, skill) => total + skill.cost, 0);
+    const spentOnMoves = pathMoves(getPath(fresh.monarchPath))
+      .filter((move) => fresh.learnedMoves.includes(move.id))
+      .reduce((total: number, move) => total + move.cost, 0);
+    fresh.sp = Math.max(0, earned - spentOnSkills - spentOnMoves);
+  } else {
+    fresh.sp = Math.max(0, Math.floor(fresh.sp));
+  }
   return fresh;
 }
 
@@ -439,6 +474,7 @@ export const useGame = create<Store>()(
           const starter = classSkills(picked).find((skill) => skill.starter);
           set({
             name: name.trim() || "Hunter",
+            appearance: { ...defaultAppearance(name.trim() || "Hunter"), pronouns: "they" },
             archetype,
             gameClass: picked,
             basicSkills: starter ? [starter.id] : [],
@@ -457,7 +493,7 @@ export const useGame = create<Store>()(
           audio.chime();
           get().notify({
             title: "Hunter Class Registered",
-            message: `<b>${getClass(id)?.name}</b>. Your skill tree is open in the GAME tab.`,
+            message: `<b>${getClass(id)?.name}</b>. Your skill tree is accessible via the ✦ button in the top bar.`,
             type: "System",
           });
         },
@@ -474,11 +510,11 @@ export const useGame = create<Store>()(
           }
           const spend = spendSkillPoints(s, id);
           if (!spend) return;
-          set({ basicSkills: spend.basicSkills, pts: spend.pts });
+          set({ basicSkills: spend.basicSkills, sp: spend.sp });
           audio.chime();
           get().notify({
             title: "Skill Learned",
-            message: `<b>${skill.name}</b> learned for ${skill.cost} stat points.`,
+            message: `<b>${skill.name}</b> learned for ${skill.cost} skill point${skill.cost === 1 ? "" : "s"}.`,
             type: "System",
           });
         },
@@ -493,20 +529,19 @@ export const useGame = create<Store>()(
           const alreadyCleared = s.storyCleared.includes(level);
           if (alreadyCleared) return true;
 
-          // Story beats hand over the next unlearned node of the class tree, so a
-          // hunter who never spends a point still finishes the act with a kit.
-          const reward = episode.grantsSkill ? nextSkillReward(s) : null;
+          // SP reward: field tiles grant 1; story/boss tiles grant 2;
+          // the level-40 Job Change ceremony grants none (the first Gate pays double to seed Act II).
+          const spReward = episode.kind === "job" ? 0 : episode.kind === "field" ? 1 : 2;
+
           set({
             storyCleared: [...s.storyCleared, level].sort((a, b) => a - b),
-            pts: s.pts - episode.cost,
+            sp: s.sp + spReward,
             gold: s.gold + episode.gold,
-            basicSkills: reward ? [...s.basicSkills, reward.id] : s.basicSkills,
           });
           audio.questComplete();
           get().notify({
             title: `${episode.title} — cleared`,
-            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, ${episode.cost} stat point${episode.cost === 1 ? "" : "s"} spent.`
-              + (reward ? `<br/>Skill granted free: <b>${reward.name}</b>.` : ""),
+            message: `<b>${episode.enemy}</b> defeated. +${episode.gold} gold, +${spReward} skill point${spReward === 1 ? "" : "s"}.`,
             type: "System",
           });
           return true;
@@ -551,9 +586,13 @@ export const useGame = create<Store>()(
            const unlockedMove = path.moves[tier - 1];
            const maxBefore = pathBonuses(s).shieldMax;
            const maxAfter = pathBonuses({ monarchPath: s.monarchPath, clearedGates: newlyCleared }).shieldMax;
+           // A Gate clear grants exactly enough SP to learn its move (plus a 1-SP buffer
+           // for the first Gate to seed the Monarch tree, since the Job Change tile gives 0).
+           const spReward = unlockedMove.cost + (tier === 1 ? 1 : 0);
            set({
              clearedGates: newlyCleared,
              gateClears,
+             sp: s.sp + spReward,
              ...rewardMessage.patch,
              shieldCharges: Math.min(maxAfter, s.shieldCharges + (maxAfter - maxBefore)),
              shieldWeek: maxAfter > 0 ? mondayKey() : s.shieldWeek,
@@ -562,7 +601,7 @@ export const useGame = create<Store>()(
            audio.rankUp();
             get().notify({
               title: `${band.name} Gate Cleared`,
-              message: `<b>${path.tiers[tier - 1].gateName}</b> conquered in battle.<br/>Title unlocked: <b>Cleared: ${path.tiers[tier - 1].gateName}</b><br/>Move unlocked: <b>${unlockedMove.name}</b> — learn it for ${unlockedMove.cost} stat points in the PATH tab.<br/>${rewardMessage.message}`,
+              message: `<b>${path.tiers[tier - 1].gateName}</b> conquered in battle.<br/>Title unlocked: <b>Cleared: ${path.tiers[tier - 1].gateName}</b><br/>Move unlocked: <b>${unlockedMove.name}</b> — learn it for ${unlockedMove.cost} skill points via the ✦ Skill Tree.<br/>${rewardMessage.message}`,
               type: "System",
             });
            return true;
@@ -581,7 +620,7 @@ export const useGame = create<Store>()(
           }
           const spend = spendMovePoints(s, id);
           if (!spend) return;
-          set({ learnedMoves: spend.learnedMoves, pts: spend.pts });
+          set({ learnedMoves: spend.learnedMoves, sp: spend.sp });
           // Learning the Tier-5 move is the ascension: the job class is replaced
           // by the Monarch title everywhere from that moment on.
           if (spend.isUltimate && !s.ascended && path) {
@@ -597,7 +636,7 @@ export const useGame = create<Store>()(
           audio.chime();
           get().notify({
             title: "Move Learned",
-            message: `<b>${move.name}</b> learned for ${move.cost} stat points.`,
+            message: `<b>${move.name}</b> learned for ${move.cost} skill point${move.cost === 1 ? "" : "s"}.`,
             type: "System",
           });
         },
@@ -625,6 +664,13 @@ export const useGame = create<Store>()(
 
         setTab: (t) => set({ tab: t }),
         setAvatar: (a) => set({ avatar: a }),
+        setLook: (name, ap) => set({ name: name.trim() || "Hunter", appearance: { ...ap, name: name.trim() || "Hunter" } }),
+        cycleGuidance: () => set((st) => ({
+          settings: {
+            ...st.settings,
+            guidance: st.settings.guidance === "full" ? "light" : st.settings.guidance === "light" ? "off" : "full",
+          },
+        })),
 
         getTargets: () => {
           const s = get();
@@ -726,6 +772,32 @@ export const useGame = create<Store>()(
           audio.repBeep();
         },
 
+        awardBattle: (sp, gold, xp = 0) => {
+          // The dungeon pays in skill points and coin always. FIELD XP is the
+          // System's gritted-teeth concession: a fight that raises your heart
+          // rate gets logged like training. The real-world ledger still pays
+          // BEST — the dungeon pays NOW.
+          const before = get().level;
+          set((st) => {
+            const draft = { ...st };
+            draft.sp += Math.max(0, sp);
+            draft.gold += Math.max(0, gold);
+            if (xp > 0) awardXP(draft as never, xp);
+            return draft;
+          });
+          if (xp > 0) {
+            const after = get().level;
+            get().notify({
+              title: after > before ? `LEVEL ${after} — FIELD XP` : "FIELD XP +",
+              message: after > before
+                ? `The System logs ${xp} XP with visible reluctance. LEVEL ${after}: stats up, 5 pts to the tree, HP refilled. Heart rate is heart rate.${sp > 0 ? ` Plus ${sp} SP.` : ""}`
+                : `+${xp} XP. Elevated heart rate counted as training; the System is filing a complaint with itself.${sp > 0 ? ` Also +${sp} SP — spend them in the Skill Tree.` : ""}`,
+              type: "System",
+            });
+          } else if (sp > 0) {
+            get().notify({ title: "SKILL POINTS +", message: `The System credits ${sp} skill point${sp === 1 ? "" : "s"} for the kill. Spend them in the Skill Tree.`, type: "System" });
+          }
+        },
         buyPotion: () => {
           get().buyItem(31);
         },
@@ -1078,10 +1150,20 @@ export const useGame = create<Store>()(
         if (state) {
           // returning player with a saved name skips to main
           state.screen = state.name ? "main" : "intro";
+          state.tab = "quest";
+          state.notifications = [];
+          state.rewardChoicePending = false;
+          state.levelUpFx = false;
+          state.rankUpFx = null;
+          state.gateClearFx = null;
+          state.ascensionFx = false;
+          state.deathConfirm = false;
           // Re-show a pending death after reload without replaying its effects.
           if (state.hp <= 0 && state.name) {
             state.dead = true;
-            state.deathConfirm = false;
+          } else {
+            state.dead = false;
+            state.deathCause = "";
           }
         }
       },
@@ -1214,7 +1296,9 @@ function maybeCompleteDaily(
 // ---------- The 1-second tick: day boundary, penalty, spawns ----------
 function runTick(set: (fn: any) => void, get: () => Store) {
   let s = get();
-  if (s.screen !== "main" || s.dead) return;
+  // Dead players are frozen; everything else — including day accounting — runs
+  // regardless of which screen is open. Real time is not paused by the UI.
+  if (s.dead) return;
   const today = todayISO();
 
   const shieldMax = pathBonuses(s).shieldMax;
@@ -1224,10 +1308,18 @@ function runTick(set: (fn: any) => void, get: () => Store) {
   }
 
   // ---- Day boundary check [A.5] ----
+  // The System remembers every midnight that passed with the Daily unclaimed,
+  // not just the last day the app happened to be open. A hunter who did their
+  // quest, then vanished for three days, still skipped TWO dailies — those days
+  // must trigger the penalty on return. `missedDays` is therefore counted from
+  // the calendar gap: the open day itself is only forgiven if it was finished.
   if (s.questDate && s.questDate !== today) {
+    const gapDays = Math.max(1, Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${s.questDate}T12:00:00`)) / 86400000) || 1);
+    // A completed last day "absorbs" exactly one boundary (yesterday was done).
+    // An unfinished last day absorbs nothing — that day counts as missed too.
+    const missedDays = s.dailyCompleted ? gapDays - 1 : gapDays;
     // An unresolved penalty keeps its original deadline; a new day must not extend it.
-    if (!s.dailyCompleted && !s.penalty) {
-      const missedDays = Math.max(1, Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${s.questDate}T12:00:00`)) / 86400000) || 1);
+    if (missedDays >= 1 && !s.penalty) {
       const shieldSpent = Math.min(missedDays, s.shieldCharges);
       if (shieldSpent > 0) {
         set({ shieldCharges: s.shieldCharges - shieldSpent });
@@ -1235,7 +1327,7 @@ function runTick(set: (fn: any) => void, get: () => Store) {
           title: "Streak Shield Activated",
           message: missedDays <= shieldSpent
             ? `${shieldSpent} missed day${shieldSpent === 1 ? "" : "s"} forgiven. Streak and HP protected. Charges recharge on Monday.`
-            : `${shieldSpent} missed day${shieldSpent === 1 ? "" : "s"} forgiven, but more time passed. The remaining miss triggers Lockdown.`,
+            : `${shieldSpent} missed day${shieldSpent === 1 ? "" : "s"} forgiven, but ${missedDays - shieldSpent} went unclaimed. The rest triggers Lockdown.`,
           type: "System",
         });
       }
@@ -1243,6 +1335,11 @@ function runTick(set: (fn: any) => void, get: () => Store) {
         // The shield covers only its actual number of missed days.
         const survives = s.hp - 20 > 0;
         const penaltyTargets = computePenaltyTargets(s.getTargets());
+        get().notify({
+          title: "The System Remembers",
+          message: `${missedDays - shieldSpent} Daily Quest${missedDays - shieldSpent === 1 ? "" : "s"} missed while you were away. Penalty is in effect — complete it or lose HP.`,
+          type: "System",
+        });
         set((st: Store) => {
           // Path Gate titles are permanent; only expired streak titles disappear.
           const stillValid =
@@ -1314,8 +1411,8 @@ function runTick(set: (fn: any) => void, get: () => Store) {
   s = get();
   if (s.dead) return;
 
-  // ---- Random spawns (not during lockdown) ----
-  if (s.dailyCompleted && !s.inLockdown && !s.dead && (s.level < 40 || !!s.monarchPath) && (typeof document === "undefined" || !document.hidden)) {
+  // ---- Random spawns (not during lockdown; ambient, so main-screen only) ----
+  if (s.screen === "main" && s.dailyCompleted && !s.inLockdown && !s.dead && (s.level < 40 || !!s.monarchPath) && (typeof document === "undefined" || !document.hidden)) {
     // Dismissible, untimed Special Quests unlock after the daily work is done.
     const current = get();
     if (!current.specialActive && Math.random() < 0.02) {

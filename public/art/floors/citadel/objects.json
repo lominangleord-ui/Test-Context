@@ -1,0 +1,113 @@
+{
+  "chunks": [
+    2,
+    2
+  ],
+  "spawn": [
+    945,
+    902
+  ],
+  "npcs": [
+    {
+      "id": "herald",
+      "x": 1120,
+      "y": 340,
+      "sprite": "herald",
+      "facing": "down",
+      "dialogue": "herald.citadel"
+    },
+    {
+      "id": "ivy",
+      "x": 770,
+      "y": 470,
+      "sprite": "ivy",
+      "facing": "down",
+      "dialogue": "ivy.citadel"
+    },
+    {
+      "id": "seo",
+      "x": 1150,
+      "y": 470,
+      "sprite": "seo",
+      "facing": "down",
+      "dialogue": "seo.citadel"
+    }
+  ],
+  "signs": [
+    {
+      "x": 880,
+      "y": 936,
+      "text": "sign.t.enter"
+    },
+    {
+      "x": 1700,
+      "y": 545,
+      "text": "sign.t.crack"
+    },
+    {
+      "x": 882,
+      "y": 138,
+      "text": "sign.t.throne"
+    },
+    {
+      "x": 150,
+      "y": 542,
+      "text": "sign.t.door"
+    }
+  ],
+  "props": [
+    {
+      "x": 930,
+      "y": 214,
+      "w": 60,
+      "h": 34,
+      "sprite": "arch",
+      "interactId": "bossGate",
+      "prompt": "KNEEL OR FIGHT"
+    }
+  ],
+  "exits": [
+    {
+      "x": 6,
+      "y": 486,
+      "w": 100,
+      "h": 92,
+      "to": "ashenveil",
+      "label": "THE UNREGISTERED DOOR",
+      "requires": "unregistered"
+    }
+  ],
+  "rests": [
+    {
+      "x": 895,
+      "y": 764,
+      "w": 104,
+      "h": 76
+    }
+  ],
+  "zones": [
+    {
+      "id": "hall",
+      "x": 600,
+      "y": 300,
+      "w": 720,
+      "h": 420,
+      "enemies": [
+        "gsent",
+        "hknife",
+        "acolyte",
+        "gsent",
+        "acolyte"
+      ]
+    }
+  ],
+  "boss": {
+    "id": "warden",
+    "name": "THE GATE WARDEN",
+    "level": 17,
+    "x": 880,
+    "y": 94,
+    "w": 136,
+    "h": 52
+  }
+}

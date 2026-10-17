@@ -9,9 +9,10 @@ import type { BasicSkill, GameClassId, HunterClass, StatKey } from "../types";
  * Monarch path move, buffs are small and single-target, the two heavy hits are
  * once per fight, and nothing scales with level. This is a level 1-40 kit.
  *
- * Economy: seven learnable nodes cost 2+3+3+4+4+5+6 = 27 stat points and are
- * level-gated up to 30. A hunter earns 3 points per level, so all eight skills
- * are reachable by level 30 with points left over for stats. Enforced by test.
+ * Economy: seven learnable nodes cost 2+3+3+4+4+5+6 = 27 skill points (SP) and
+ * are level-gated up to 30. SP comes from clearing story tiles — 1 per field
+ * tile, 2 per story/boss beat — which pays 37 SP by level 30, so the full kit
+ * is reachable with 10 SP of slack. Stat points are a separate currency.
  */
 const role = (name: string, desc: string, level: number, cost: number, extra: Partial<BasicSkill>): BasicSkill => ({
   id: "", name, desc, level, cost, role: "opener", power: 0, ...extra,
