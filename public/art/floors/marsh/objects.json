@@ -1,140 +1,140 @@
 {
- "chunks": [
-  2,
-  2
- ],
- "spawn": [
-  722,
-  458
- ],
- "npcs": [
-  {
-   "id": "sila",
-   "x": 1302,
-   "y": 470,
-   "sprite": "sila",
-   "facing": "down",
-   "dialogue": "sila.marsh"
-  },
-  {
-   "id": "seo",
-   "x": 1148,
-   "y": 428,
-   "sprite": "seo",
-   "facing": "down",
-   "dialogue": "seo.marsh"
-  },
-  {
-   "id": "reed",
-   "x": 556,
-   "y": 470,
-   "sprite": "reedwatcher",
-   "facing": "down",
-   "dialogue": "reedwatcher.marsh",
-   "hideAfter": "genocideMarsh"
+  "chunks": [
+    2,
+    2
+  ],
+  "spawn": [
+    722,
+    458
+  ],
+  "npcs": [
+    {
+      "id": "sila",
+      "x": 1302,
+      "y": 470,
+      "sprite": "sila",
+      "facing": "down",
+      "dialogue": "sila.marsh"
+    },
+    {
+      "id": "seo",
+      "x": 1148,
+      "y": 428,
+      "sprite": "seo",
+      "facing": "down",
+      "dialogue": "seo.marsh"
+    },
+    {
+      "id": "reed",
+      "x": 556,
+      "y": 470,
+      "sprite": "reedwatcher",
+      "facing": "down",
+      "dialogue": "reedwatcher.marsh",
+      "hideAfter": "genocideMarsh"
+    }
+  ],
+  "signs": [
+    {
+      "x": 762,
+      "y": 424,
+      "text": "sign.m.arrive"
+    },
+    {
+      "x": 1330,
+      "y": 604,
+      "text": "sign.m.village"
+    },
+    {
+      "x": 902,
+      "y": 508,
+      "text": "sign.m.posters"
+    },
+    {
+      "x": 966,
+      "y": 290,
+      "text": "sign.m.stairs"
+    }
+  ],
+  "props": [
+    {
+      "x": 1086,
+      "y": 560,
+      "w": 60,
+      "h": 48,
+      "sprite": "hut",
+      "interactId": "shop.sila",
+      "prompt": "TRADE",
+      "solid": "rect"
+    },
+    {
+      "x": 168,
+      "y": 470,
+      "w": 45,
+      "h": 30,
+      "sprite": "boat"
+    },
+    {
+      "x": 208,
+      "y": 543,
+      "w": 45,
+      "h": 30,
+      "sprite": "boat"
+    }
+  ],
+  "exits": [
+    {
+      "x": 930,
+      "y": 1018,
+      "w": 130,
+      "h": 60,
+      "to": "caverns",
+      "label": "ASHEN CAVERNS"
+    }
+  ],
+  "rests": [
+    {
+      "x": 1176,
+      "y": 474,
+      "w": 104,
+      "h": 76
+    }
+  ],
+  "zones": [
+    {
+      "id": "reedflats",
+      "x": 440,
+      "y": 470,
+      "w": 230,
+      "h": 76,
+      "enemies": [
+        "lurker",
+        "reed",
+        "dsentry",
+        "lurker"
+      ]
+    },
+    {
+      "id": "deepbog",
+      "x": 770,
+      "y": 830,
+      "w": 280,
+      "h": 86,
+      "enemies": [
+        "dsentry",
+        "lurker",
+        "reed",
+        "dsentry"
+      ]
+    }
+  ],
+  "boss": {
+    "id": "sentinel",
+    "name": "STONE SENTINEL",
+    "level": 7,
+    "x": 874,
+    "y": 114,
+    "w": 136,
+    "h": 52
   }
- ],
- "signs": [
-  {
-   "x": 762,
-   "y": 424,
-   "text": "sign.m.arrive"
-  },
-  {
-   "x": 1330,
-   "y": 604,
-   "text": "sign.m.village"
-  },
-  {
-   "x": 902,
-   "y": 508,
-   "text": "sign.m.posters"
-  },
-  {
-   "x": 966,
-   "y": 290,
-   "text": "sign.m.stairs"
-  }
- ],
- "props": [
-  {
-   "x": 1086,
-   "y": 560,
-   "w": 60,
-   "h": 48,
-   "sprite": "hut",
-   "interactId": "shop.sila",
-   "prompt": "TRADE",
-   "solid": "rect"
-  },
-  {
-   "x": 168,
-   "y": 470,
-   "w": 45,
-   "h": 30,
-   "sprite": "boat"
-  },
-  {
-   "x": 208,
-   "y": 543,
-   "w": 45,
-   "h": 30,
-   "sprite": "boat"
-  }
- ],
- "exits": [
-  {
-   "x": 930,
-   "y": 1018,
-   "w": 130,
-   "h": 60,
-   "to": "caverns",
-   "label": "ASHEN CAVERNS"
-  }
- ],
- "rests": [
-  {
-   "x": 1176,
-   "y": 474,
-   "w": 104,
-   "h": 76
-  }
- ],
- "zones": [
-  {
-   "id": "reedflats",
-   "x": 440,
-   "y": 470,
-   "w": 230,
-   "h": 76,
-   "enemies": [
-    "lurker",
-    "reed",
-    "dsentry",
-    "lurker"
-   ]
-  },
-  {
-   "id": "deepbog",
-   "x": 770,
-   "y": 830,
-   "w": 280,
-   "h": 86,
-   "enemies": [
-    "dsentry",
-    "lurker",
-    "reed",
-    "dsentry"
-   ]
-  }
- ],
- "boss": {
-  "id": "sentinel",
-  "name": "STONE SENTINEL",
-  "level": 12,
-  "x": 874,
-  "y": 114,
-  "w": 136,
-  "h": 52
- }
 }

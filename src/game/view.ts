@@ -423,16 +423,16 @@ export class AshenGame {
         this.mode = "talk"; return;
       }
       const lvA = useGame.getState().level;
-      const decA = bossGateDecision({ playerLevel: lvA, recLevel: 30, hubSeen: (this.flags.met["seo.verdant"] ?? 0) > 0 });
+      const decA = bossGateDecision({ playerLevel: lvA, recLevel: 24, hubSeen: (this.flags.met["seo.verdant"] ?? 0) > 0 });
       if (decA === "block") {
-        this.pages = { lines: bossGateLines("THE ALPHA", 30, lvA, "block"), idx: 0, t: 0 };
+        this.pages = { lines: bossGateLines("THE ALPHA", 24, lvA, "block"), idx: 0, t: 0 };
         this.mode = "talk"; Sfx.open(); return;
       }
       if (decA === "warn") {
         this.choice = {
-          lines: bossGateLines("THE ALPHA", 30, lvA, "warn"), idx: 0, t: 0, sel: 1,
+          lines: bossGateLines("THE ALPHA", 24, lvA, "warn"), idx: 0, t: 0, sel: 1,
           opts: [
-            { label: `FIGHT IT ANYWAY — LV ${lvA} VS LV 30`, run: () => this.proceedDenAlpha() },
+            { label: `FIGHT IT ANYWAY — LV ${lvA} VS LV 24`, run: () => this.proceedDenAlpha() },
             { label: "BACK OUT; TRAIN FIRST", run: () => this.toastNow("[SYSTEM] The den exhales. Noted: not today.") },
           ],
         };
@@ -518,7 +518,7 @@ export class AshenGame {
   private proceedDenAlpha() {
     Sfx.bossIntro();
     this.pagesActor = "alpha";
-    this.pages = { lines: bossGateScript("alpha", this.flags), idx: 0, t: 0, after: () => this.beginBattle("alpha", 30, true) };
+    this.pages = { lines: bossGateScript("alpha", this.flags), idx: 0, t: 0, after: () => this.beginBattle("alpha", 24, true) };
     this.mode = "talk";
   }
   private proceedBoss(id: string, level: number) {
@@ -762,7 +762,7 @@ export class AshenGame {
     let label = "TALK";
     if (hit.kind === "sign") label = "READ";
     if (hit.key === "save") label = "SAVE";
-    if (hit.key === "bossGate") label = `ENTER — GATE DUELIST · REC LV ${this.flags.killsPines >= 7 && this.flags.killsRidge >= 7 ? 30 : 12}`;
+    if (hit.key === "bossGate") label = `ENTER — GATE DUELIST · REC LV ${this.flags.killsPines >= 7 && this.flags.killsRidge >= 7 ? 24 : 8}`;
     if (hit.key === "shop.sila") label = "TRADE";
     if (hit.key === "boss") {
       const bo0 = this.floor.objects.boss;
@@ -1101,7 +1101,9 @@ export class AshenGame {
       return;
     }
     if (r.outcome === "win") {
-      store.awardBattle(r.sp, r.gold);
+      const foeLv = b.enemy.zoneLevel || 1;
+      const xp = b.enemy.boss ? Math.round(foeLv * foeLv * 60) : Math.round(80 + 34 * foeLv);
+      store.awardBattle(r.sp, r.gold, xp);
       const z = inZone(this.floor, this.px, this.py);
       if (eid === "hare" || eid === "hound" || eid === "imp" || eid === "wight") {
         if (z?.id === "ridge") this.flags.killsRidge++; else this.flags.killsPines++;
@@ -1130,7 +1132,7 @@ export class AshenGame {
     }
     if (r.outcome === "spare") {
       Sfx.spare();
-      store.awardBattle(0, r.gold);
+      { const fl = b.enemy.zoneLevel || 1; store.awardBattle(0, r.gold, b.enemy.boss ? Math.round(fl * fl * 45) : Math.round(64 + 26 * fl)); }
       if (eid === "hare") this.flags.sparedHare = true;
       if (eid === "hound") this.flags.sparedHound = true;
       if (eid === "bat") this.flags.emberBond = true;
@@ -1705,6 +1707,10 @@ export class AshenGame {
     if (key === "kang.caverns" && f.met[key] >= 2) f.kangBond = true;   // the second lesson is the trust
     if (key === "verity.caverns" && f.met[key] >= 1) f.met["verity.keys"] = 1;
     if (key === "ivy.citadel" && f.met[key] >= 1 && f.kangBond) f.met["ivy.lesson"] = 1;
+    // First meeting with a quest NPC is legible labor: the System pays paperwork XP.
+    if (f.met[key] === 1 && this.floor.objects.npcs.some((np) => np.dialogue === key)) {
+      useGame.getState().awardBattle(0, 0, 60);
+    }
   }
   private startBoss() {
     if (this.flags.tpDone || this.flags.genDone) {
@@ -1716,7 +1722,7 @@ export class AshenGame {
       this.mode = "talk"; return;
     }
     const gen = this.flags.killsPines >= 7 && this.flags.killsRidge >= 7;
-    const rec = gen ? 30 : 12;
+    const rec = gen ? 24 : 8;
     const lv = useGame.getState().level;
     const hubSeen = (this.flags.met["seo.verdant"] ?? 0) > 0;
     const decision = bossGateDecision({ playerLevel: lv, recLevel: rec, hubSeen });
@@ -1745,7 +1751,7 @@ export class AshenGame {
     Sfx.bossIntro();
     this.pages = {
       lines: bossGateHint(this.flags), idx: 0, t: 0,
-      after: () => this.beginBattle(gen ? "sentry" : "kesh", gen ? 30 : 12),
+      after: () => this.beginBattle(gen ? "sentry" : "kesh", gen ? 24 : 8),
     };
     this.mode = "talk";
   }

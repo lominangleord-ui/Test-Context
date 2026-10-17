@@ -35,7 +35,7 @@ export function bossGateLines(bossName: string, rec: number, lv: number, mode: "
       text: `CONTRACT RATING: LV ${rec}. YOUR RATING: LV ${lv}. CLEARANCE REQUIRED. The System has read both numbers and chosen the door.`,
     },
     {
-      text: `Not today, ${bossName} — and the System hasn't the decency to sound sorry about it. Know the math: LEVELS ARE TRAINED, NOT GRINDED. Only logged training (the real-world ledger the System reads) raises the number on your plate. Dungeon kills pay SP, and SP buys the skill tree — [X] to spend. The tree sharpens; training outlevels. Both count. Neither is wasted.`,
+      text: `Not today, ${bossName} — and the System hasn't the decency to sound sorry about it. Know the math: real-world training pays BEST, but the dungeon pays NOW. Every kill drops FIELD XP (the System logs a raised heart rate whether it likes the source or not), bosses pay bounties, first meetings pay for paperwork, and kills stack SP for the skill tree — [X] to spend. Grind, train, or file: the number moves. Go move it.`,
     },
     {
       text: "Meanwhile the floor has jobs for you: check in with the handler, work the survey board, take the debts the journal [J] lists. Paperwork builds legends. Go be legible.",

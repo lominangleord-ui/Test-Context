@@ -270,7 +270,7 @@ function defaults(id: string): FloorSave {
       { id: "garden", x: T(37), y: TY(14), w: T(20), h: TY(10), enemies: ["stalker", "rhound", "crawler", "stalker"] },
     );
     o.rests.push({ x: T(24.5), y: TY(43), w: SZ(56), h: SZY(40) });
-    o.boss = { id: "hobgoblin", name: "BLOOD-RED HOBGOBLIN", level: 5, x: T(29.5), y: TY(5), w: SZ(72), h: SZY(30) };
+    o.boss = { id: "hobgoblin", name: "BLOOD-RED HOBGOBLIN", level: 3, x: T(29.5), y: TY(5), w: SZ(72), h: SZY(30) };
     o.exits.push({ x: T(29.5), y: TY(1), w: SZ(90), h: SZY(26), to: "marsh", label: "SUNKEN MARSH" });
   } else if (id === "marsh") {
     o.spawn = [T(37), TY(5)];
@@ -294,7 +294,7 @@ function defaults(id: string): FloorSave {
       { id: "deepbog", x: T(8), y: TY(44), w: T(16), h: TY(12), enemies: ["dsentry", "lurker", "reed", "dsentry"] },
     );
     o.rests.push({ x: T(41), y: TY(31), w: SZ(56), h: SZY(40) });
-    o.boss = { id: "sentinel", name: "STONE SENTINEL", level: 12, x: T(27.5), y: TY(16.5), w: SZ(72), h: SZY(30) };
+    o.boss = { id: "sentinel", name: "STONE SENTINEL", level: 7, x: T(27.5), y: TY(16.5), w: SZ(72), h: SZY(30) };
     o.exits.push({ x: T(35), y: TY(59.5), w: SZ(90), h: SZY(26), to: "caverns", label: "ASHEN CAVERNS" });
   } else if (id === "caverns") {
     o.spawn = [T(7), TY(5)];
@@ -321,7 +321,7 @@ function defaults(id: string): FloorSave {
     );
     o.rests.push({ x: T(4), y: TY(4), w: SZ(56), h: SZY(40) });
     o.props.push({ x: T(20), y: TY(10.5), w: SZ(24), h: SZY(16), sprite: "bones", interactId: "den", prompt: "ENTER THE DEN" });
-    o.boss = { id: "irontusk", name: "IRON TUSK", level: 20, x: T(43.5), y: TY(51.5), w: SZ(72), h: SZY(30) };
+    o.boss = { id: "irontusk", name: "IRON TUSK", level: 13, x: T(43.5), y: TY(51.5), w: SZ(72), h: SZY(30) };
     o.exits.push({ x: T(52), y: TY(53), w: SZ(90), h: SZY(26), to: "citadel", label: "MONARCH'S CITADEL" });
   } else if (id === "citadel") {
     o.spawn = [T(31.5), TY(57)];
@@ -340,7 +340,7 @@ function defaults(id: string): FloorSave {
     );
     o.zones.push({ id: "hall", x: T(6), y: TY(34), w: T(52), h: TY(24), enemies: ["gsent", "hknife", "acolyte", "gsent", "acolyte"] });
     o.rests.push({ x: T(30), y: TY(46), w: SZ(56), h: SZY(40) });
-    o.boss = { id: "warden", name: "THE GATE WARDEN", level: 38, x: T(29.5), y: TY(8), w: SZ(72), h: SZY(30) };
+    o.boss = { id: "warden", name: "THE GATE WARDEN", level: 17, x: T(29.5), y: TY(8), w: SZ(72), h: SZY(30) };
     o.exits.push({ x: T(2.5), y: TY(30.5), w: SZ(64), h: SZY(30), to: "ashenveil", label: "THE UNREGISTERED DOOR", requires: "unregistered" });
   } else if (id === "ashenveil") {
     o.spawn = [T(31.5), TY(33.5)];

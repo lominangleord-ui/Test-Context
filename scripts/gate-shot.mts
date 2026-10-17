@@ -134,4 +134,10 @@ const cb = readBoss("citadel");
 A.warpPlayer(cb.x + cb.w / 2, cb.y + cb.h / 2 + 26); await frames(4);
 shot("94-gate-citadel-door");
 
+
+// paperwork pays: a first NPC meeting drops FIELD XP — the chip must move
+(A.flags as { met: Record<string, number> }).met["seo.verdant"] = 0;
+useGame.getState().awardBattle(0, -5, 0); // (no-op safety; chip math below)
+A.afterTalk("seo.verdant"); await frames(10);
+shot("95-gate-paperwork-xp");
 process.exit(0);

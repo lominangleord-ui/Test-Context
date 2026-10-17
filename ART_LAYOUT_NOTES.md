@@ -95,3 +95,11 @@ F2 editor. Coordinates are ground.png px (= world units, 1920×1080).
 34. Encounter treadmill fixed: ambush cadence is ~14-30 s of walking (was ~4-8), with
     graces — 6 s on floor arrival, 8 s post-battle (was 1.8), 10 s after death. Dash
     halves your step footprint, so running from trouble is now mechanically real.
+35. FIELD XP: dungeon kills pay real XP now (kill = 80+34×foeLv, boss = 60×rec², spare ≈ 75%
+    of the kill rate, first NPC meeting = +60). awardBattle(sp, gold, xp) is the single
+    pipeline; the System complains while granting it. Real-world training still pays BEST
+    (daily quest = 500/1000 XP) — the dungeon pays NOW. A Lv-1 player clears the verdant
+    arc in ~15-20 min and arrives at the Warden's door near the ladder.
+36. BOSS LADDER retuned to actual play speed: verdant 3, marsh 7, caverns 13, citadel 17,
+    ashenveil arch 8 (genocide: 24), alpha den 24 — one number per boss, in objects.json
+    AND floor.ts defaults (keep them in sync; gate.test.ts checks the ladder climbs).

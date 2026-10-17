@@ -83,7 +83,7 @@ interface Actions {
   allocateStat: (stat: StatKey) => void;
   // economy
   buyPotion: () => void;
-  awardBattle: (sp: number, gold: number) => void;
+  awardBattle: (sp: number, gold: number, xp?: number) => void;
   buyItem: (id: number) => void;
   equipItem: (id: number) => void;
   consumePotion: () => void;
@@ -772,10 +772,31 @@ export const useGame = create<Store>()(
           audio.repBeep();
         },
 
-        awardBattle: (sp, gold) => {
-          // The dungeon pays ONLY in skill points and coin — XP stays tied to the real world.
-          set((s) => ({ sp: s.sp + Math.max(0, sp), gold: s.gold + Math.max(0, gold) }));
-          if (sp > 0) get().notify({ title: "SKILL POINTS +", message: `The System credits ${sp} skill point${sp === 1 ? "" : "s"} for the kill. Spend them in the Skill Tree.`, type: "System" });
+        awardBattle: (sp, gold, xp = 0) => {
+          // The dungeon pays in skill points and coin always. FIELD XP is the
+          // System's gritted-teeth concession: a fight that raises your heart
+          // rate gets logged like training. The real-world ledger still pays
+          // BEST — the dungeon pays NOW.
+          const before = get().level;
+          set((st) => {
+            const draft = { ...st };
+            draft.sp += Math.max(0, sp);
+            draft.gold += Math.max(0, gold);
+            if (xp > 0) awardXP(draft as never, xp);
+            return draft;
+          });
+          if (xp > 0) {
+            const after = get().level;
+            get().notify({
+              title: after > before ? `LEVEL ${after} — FIELD XP` : "FIELD XP +",
+              message: after > before
+                ? `The System logs ${xp} XP with visible reluctance. LEVEL ${after}: stats up, 5 pts to the tree, HP refilled. Heart rate is heart rate.${sp > 0 ? ` Plus ${sp} SP.` : ""}`
+                : `+${xp} XP. Elevated heart rate counted as training; the System is filing a complaint with itself.${sp > 0 ? ` Also +${sp} SP — spend them in the Skill Tree.` : ""}`,
+              type: "System",
+            });
+          } else if (sp > 0) {
+            get().notify({ title: "SKILL POINTS +", message: `The System credits ${sp} skill point${sp === 1 ? "" : "s"} for the kill. Spend them in the Skill Tree.`, type: "System" });
+          }
         },
         buyPotion: () => {
           get().buyItem(31);
