@@ -1,0 +1,207 @@
+{
+  "chunks": [
+    2,
+    2
+  ],
+  "spawn": [
+    952,
+    978
+  ],
+  "npcs": [
+    {
+      "id": "miso",
+      "x": 862,
+      "y": 856,
+      "sprite": "shopgirl",
+      "facing": "down",
+      "dialogue": "shop.miso"
+    },
+    {
+      "id": "baek",
+      "x": 700,
+      "y": 862,
+      "sprite": "innkeep",
+      "facing": "down",
+      "dialogue": "inn.baek",
+      "hideAfter": "genocideZone"
+    },
+    {
+      "id": "kid",
+      "x": 1010,
+      "y": 856,
+      "sprite": "kid",
+      "facing": "down",
+      "dialogue": "kid.lost",
+      "hideAfter": "dogReturned"
+    },
+    {
+      "id": "prof",
+      "x": 1122,
+      "y": 856,
+      "sprite": "prof",
+      "facing": "down",
+      "dialogue": "prof.lessons",
+      "hideAfter": "genocideZone"
+    },
+    {
+      "id": "skater",
+      "x": 1242,
+      "y": 856,
+      "sprite": "skater",
+      "facing": "down",
+      "dialogue": "skater.ryu",
+      "hideAfter": "genocideZone"
+    },
+    {
+      "id": "hermit",
+      "x": 872,
+      "y": 222,
+      "sprite": "hermit",
+      "facing": "down",
+      "dialogue": "hermit.shadow",
+      "hideAfter": "keshKilled"
+    },
+    {
+      "id": "dog",
+      "x": 1120,
+      "y": 878,
+      "sprite": "houndOw",
+      "facing": "down",
+      "dialogue": "dog.rock",
+      "hideAfter": "dogFound"
+    }
+  ],
+  "signs": [
+    {
+      "x": 936,
+      "y": 1016,
+      "text": "sign.entry"
+    },
+    {
+      "x": 905,
+      "y": 528,
+      "text": "sign.plaza"
+    },
+    {
+      "x": 1012,
+      "y": 560,
+      "text": "sign.crater"
+    },
+    {
+      "x": 1584,
+      "y": 214,
+      "text": "sign.gate"
+    },
+    {
+      "x": 330,
+      "y": 542,
+      "text": "sign.river"
+    },
+    {
+      "x": 895,
+      "y": 562,
+      "text": "sign.bench"
+    },
+    {
+      "x": 1700,
+      "y": 702,
+      "text": "sign.pond"
+    },
+    {
+      "x": 1498,
+      "y": 98,
+      "text": "sign.ridge"
+    }
+  ],
+  "props": [
+    {
+      "x": 988,
+      "y": 640,
+      "w": 24,
+      "h": 38,
+      "sprite": "obelisk",
+      "interactId": "save",
+      "prompt": "SAVE",
+      "solid": "rect"
+    },
+    {
+      "x": 1585,
+      "y": 168,
+      "w": 90,
+      "h": 56,
+      "sprite": "gate",
+      "interactId": "gate",
+      "prompt": "OPEN",
+      "solid": "rect",
+      "unlockedBy": "gateOpen"
+    },
+    {
+      "x": 1340,
+      "y": 488,
+      "w": 60,
+      "h": 48,
+      "sprite": "portal",
+      "interactId": "bossGate",
+      "prompt": "ENTER"
+    },
+    {
+      "x": 836,
+      "y": 894,
+      "w": 45,
+      "h": 30,
+      "sprite": "stall",
+      "interactId": "shop.miso",
+      "prompt": "TRADE"
+    }
+  ],
+  "exits": [
+    {
+      "x": 0,
+      "y": 500,
+      "w": 84,
+      "h": 80,
+      "to": "citadel",
+      "label": "RETURN TO THE CITADEL"
+    }
+  ],
+  "rests": [
+    {
+      "x": 418,
+      "y": 484,
+      "w": 104,
+      "h": 76
+    }
+  ],
+  "zones": [
+    {
+      "id": "pines",
+      "x": 1120,
+      "y": 620,
+      "w": 380,
+      "h": 92,
+      "enemies": [
+        "hare",
+        "hare",
+        "hound",
+        "hare",
+        "imp",
+        "hound"
+      ]
+    },
+    {
+      "id": "ridge",
+      "x": 700,
+      "y": 300,
+      "w": 320,
+      "h": 100,
+      "enemies": [
+        "imp",
+        "wight",
+        "hare",
+        "wight",
+        "hound",
+        "imp"
+      ]
+    }
+  ]
+}
