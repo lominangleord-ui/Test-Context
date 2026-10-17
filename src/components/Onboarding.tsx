@@ -1,19 +1,75 @@
 import { useEffect, useState } from "react";
 import type { GameClassId } from "../types";
 import { useGame } from "../store/game";
-import { ARCHETYPES, AVATARS } from "../data";
-import { HUNTER_CLASSES } from "../data/classes";
+import { AVATARS } from "../data";
 import type { ArchetypeId } from "../types";
 import { SystemWindow } from "./SystemWindow";
 import { RunicText } from "./common";
 import { audio } from "../lib/audio";
 
+/**
+ * The four starting Pathways — each bundles a daily-target archetype AND a
+ * hunter class together, so new players make one meaningful choice instead of
+ * two confusing back-to-back picks. The Monarch Pathways (all nine) stay a
+ * free choice at the level-40 Job Change ceremony.
+ */
+const STARTING_PATHWAYS: {
+  id: string;
+  name: string;
+  tagline: string;
+  icon: string;
+  color: string;
+  archetype: ArchetypeId;
+  gameClass: GameClassId;
+  blurb: string;
+}[] = [
+  {
+    id: "vanguard",
+    name: "Vanguard",
+    tagline: "Frontline · Strength & Vitality",
+    icon: "⚔",
+    color: "#ff8a5b",
+    archetype: "monarch",
+    gameClass: "fighter",
+    blurb: "Push-ups start at 60 and grow to 120. Cleave, Iron Guard, Warlord's Roar — you stand in the front and outlast everything.",
+  },
+  {
+    id: "arcanist",
+    name: "Arcanist",
+    tagline: "Artillery · Mind & Power",
+    icon: "✧",
+    color: "#a58bff",
+    archetype: "balanced",
+    gameClass: "mage",
+    blurb: "Balanced targets with a full kit of Mana Bolt, Flame Lance, and Arcane Focus. Distance, precision, and overwhelming force.",
+  },
+  {
+    id: "shadow",
+    name: "Shadow",
+    tagline: "Striker · Speed & Precision",
+    icon: "◈",
+    color: "#38d98a",
+    archetype: "assassin",
+    gameClass: "assassin",
+    blurb: "Core & squats start at 60 and grow to 115. Quick Strike, Vital Strike, Assassinate — four cuts before the first one lands.",
+  },
+  {
+    id: "ranger",
+    name: "Ranger",
+    tagline: "Marksman · Endurance & Control",
+    icon: "⌖",
+    color: "#8fdfff",
+    archetype: "vanguard",
+    gameClass: "ranger",
+    blurb: "Runs start at 1.5km and grow to 12km. Piercing Shot, Camouflage, Eagle Eye — solve the fight from range, patiently.",
+  },
+];
+
 export function Intro() {
   const awaken = useGame((s) => s.awaken);
   const [name, setName] = useState("");
-  const [arch, setArch] = useState<ArchetypeId>("balanced");
-  const [gameClass, setGameClass] = useState<GameClassId>("fighter");
   const [avatar, setAvatar] = useState(AVATARS[0].src);
+  const [pathwayId, setPathwayId] = useState(STARTING_PATHWAYS[0].id);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -45,7 +101,6 @@ export function Intro() {
           transition: "opacity 600ms cubic-bezier(0.16,1,0.3,1)",
         }}
       >
-        {/* Masthead */}
         <div className="text-center">
           <div className="font-kr text-xl text-[color:var(--cyan-bright)] tracking-[0.5em] glow-text">
             시스템
@@ -64,7 +119,6 @@ export function Intro() {
 
         {ready && (
           <SystemWindow title="REGISTRATION" titleSize="sm">
-            {/* Portrait selection */}
             <div className="font-sys text-[9.5px] tracking-[0.3em] text-[color:var(--text-dim)] uppercase mb-2">
               Select Portrait
             </div>
@@ -86,7 +140,6 @@ export function Intro() {
               ))}
             </div>
 
-            {/* Name */}
             <div className="font-sys text-[9.5px] tracking-[0.3em] text-[color:var(--text-dim)] uppercase mb-2">
               Player Name
             </div>
@@ -99,78 +152,53 @@ export function Intro() {
               className="sl-input mb-4"
             />
 
-            {/* Specialty: what you train, not what you fight with */}
             <div className="font-sys text-[9.5px] tracking-[0.3em] text-[color:var(--text-dim)] uppercase mb-2">
-              Choose Specialty
+              Choose Your Pathway
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {(Object.values(ARCHETYPES) as (typeof ARCHETYPES)[ArchetypeId][]).map((a) => {
-                const on = arch === a.id;
-                return (
-                  <button
-                    key={a.id}
-                    onClick={() => pick(() => setArch(a.id))}
-                    className="text-left p-2.5 border transition-all flex items-start gap-2.5"
-                    style={{
-                      borderColor: on ? "var(--cyan)" : "#ffffff12",
-                      background: on ? "#1e9bff12" : "#04101d66",
-                      boxShadow: on ? "0 0 18px var(--cyan-glow)" : "none",
-                    }}
-                  >
-                    <span className="text-xl leading-none mt-0.5">{a.icon}</span>
-                    <div className="min-w-0">
-                      <div className="font-sys text-[12px] font-600 tracking-[0.1em] text-[color:var(--text-bright)]">
-                        {a.name}
-                      </div>
-                      <div className="text-[10px] text-[color:var(--text)] leading-snug mt-0.5">
-                        {a.desc}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Hunter class: the kit you fight the story with */}
-            <div className="font-sys text-[9.5px] tracking-[0.3em] text-[color:var(--text-dim)] uppercase mt-4 mb-2">
-              Choose Hunter Class
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {HUNTER_CLASSES.map((entry) => {
-                const on = gameClass === entry.id;
-                return (
-                  <button
-                    key={entry.id}
-                    onClick={() => pick(() => setGameClass(entry.id))}
-                    className="text-left p-2.5 border transition-all flex items-start gap-2.5"
-                    style={{
-                      borderColor: on ? entry.color : "#ffffff12",
-                      background: on ? `${entry.color}14` : "#04101d66",
-                      boxShadow: on ? `0 0 18px ${entry.color}44` : "none",
-                    }}
-                  >
-                    <span className="text-xl leading-none mt-0.5" style={{ color: entry.color }}>{entry.icon}</span>
-                    <div className="min-w-0">
-                      <div className="font-sys text-[12px] font-600 tracking-[0.1em]" style={{ color: on ? entry.color : "var(--text-bright)" }}>
-                        {entry.name}
-                      </div>
-                      <div className="text-[10px] text-[color:var(--text)] leading-snug mt-0.5">
-                        {entry.role} · leans {entry.stats.map((stat) => stat.toUpperCase()).join(" / ")}. Eight-skill tree, all of it by level 30.
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="font-mono text-[9px] text-[color:var(--text-dim)] mt-2">
-              YOUR SPECIALTY SETS DAILY TARGETS. YOUR CLASS SETS THE SKILL TREE YOU FIGHT WITH.
+            <p className="font-mono text-[9.5px] text-[color:var(--text-dim)] mb-3 leading-relaxed">
+              Four pathways. One decides how you train AND how you fight. You can take any of the
+              nine Monarch lineages at the Job Change (level 40) — your starting path does not lock that.
             </p>
+            <div className="grid grid-cols-1 gap-2">
+              {STARTING_PATHWAYS.map((p) => {
+                const on = pathwayId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => pick(() => setPathwayId(p.id))}
+                    className="class-card"
+                    style={{
+                      borderColor: on ? p.color : "#ffffff12",
+                      background: on ? `${p.color}14` : "#04101d80",
+                      boxShadow: on ? `0 0 20px ${p.color}44` : "none",
+                    }}
+                    aria-pressed={on}
+                  >
+                    <span className="class-card-icon" style={{ color: p.color }}>{p.icon}</span>
+                    <span className="min-w-0 block">
+                      <span className="block font-head text-[16px] tracking-wide" style={{ color: on ? p.color : "var(--text-bright)" }}>
+                        {p.name}
+                      </span>
+                      <span className="block font-mono text-[9px] tracking-[0.18em] mt-0.5" style={{ color: on ? p.color : "var(--text-dim)" }}>
+                        {p.tagline.toUpperCase()}
+                      </span>
+                      <span className="block text-[11px] text-[color:var(--text)] mt-1.5 leading-snug">{p.blurb}</span>
+                    </span>
+                    {on && <span className="ml-2 text-lg" style={{ color: p.color }} aria-hidden="true">◆</span>}
+                  </button>
+                );
+              })}
+            </div>
           </SystemWindow>
         )}
 
         {ready && (
           <button
-            onClick={() => name.trim() && awaken(name, arch, avatar, gameClass)}
+            onClick={() => {
+              const chosen = STARTING_PATHWAYS.find((p) => p.id === pathwayId)!;
+              if (!name.trim()) return;
+              awaken(name, chosen.archetype, avatar, chosen.gameClass);
+            }}
             disabled={!name.trim()}
             className="sl-btn sl-btn-solid w-full py-4 text-lg font-head tracking-[0.5em]"
           >

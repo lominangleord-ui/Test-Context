@@ -271,7 +271,7 @@ export function ProfileWindow() {
 /* ══════════ STATUS WINDOW (the classic stat sheet) ══════════ */
 export function StatusPanel() {
   const s = useGame(useShallow((state) => ({
-    level: state.level, pts: state.pts,
+    level: state.level, pts: state.pts, sp: state.sp,
     str: state.str, agi: state.agi, vit: state.vit,
     hp: state.hp, hpMax: state.hpMax, mp: state.mp, mpMax: state.mpMax,
     xp: state.xp, xpMax: state.xpMax, fatigueLevel: state.fatigueLevel,
@@ -345,11 +345,14 @@ export function StatusPanel() {
         <StatCell ico={Glyph.ftg} label="FTG" value={`${Math.round(s.fatigueLevel)}%`} />
       </div>
 
-      {s.pts > 0 && (
-        <div className="text-center font-sys text-[10px] tracking-[0.22em] text-[color:var(--gold)] mt-2.5 animate-pulse">
-          {s.pts} POINT{s.pts > 1 ? "S" : ""} AVAILABLE
+      <div className="flex items-center justify-between mt-2.5 font-sys text-[10px] tracking-[0.18em]">
+        <div style={{ color: s.pts > 0 ? "var(--gold)" : "var(--text-dim)" }} className={s.pts > 0 ? "animate-pulse" : ""}>
+          {s.pts} STAT PT{s.pts !== 1 ? "S" : ""}
         </div>
-      )}
+        <div style={{ color: s.sp > 0 ? "var(--cyan-bright)" : "var(--text-dim)" }} className={s.sp > 0 ? "animate-pulse" : ""}>
+          ✦ {s.sp} SKILL PT{s.sp !== 1 ? "S" : ""}
+        </div>
+      </div>
 
       {s.resurrectDebuff > 0 && (
         <div className="mt-2 border border-[color:var(--red-dim)] bg-[#ff3b520a] p-2 text-center font-sys text-[10px] tracking-[0.14em] text-[color:var(--red)]">

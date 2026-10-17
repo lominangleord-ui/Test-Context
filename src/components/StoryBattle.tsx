@@ -234,7 +234,10 @@ export function StoryBattle() {
         setPlayerHP(playerHPRef.current);
       }
       if (playerHPRef.current <= 0) {
-        enemyLines.push("DEFEAT. You retreat with nothing lost but the attempt. Try the tile again anytime.");
+        enemyLines.push(
+          "DEFEAT. You retreat with nothing lost but the attempt.",
+          "SYSTEM: It was stronger than you — that is the point. Clear a workout, spend your STAT points, buy a node in the ✦ Skill Tree. Then come back.",
+        );
         setEnding("defeat");
         beginTurn([...lines, ...enemyLines]);
         return;
@@ -267,7 +270,7 @@ export function StoryBattle() {
               LEVEL {episode.level} · {episode.title}
             </div>
             <div className="font-mono text-[9px] text-[color:var(--text-dim)] mt-1">
-              {replay ? "REPLAY / NO REPEAT REWARDS" : `${episode.kind.toUpperCase()} ENCOUNTER / ${episode.cost} STAT POINT${episode.cost === 1 ? "" : "S"}`}
+              {replay ? "REPLAY / NO REPEAT REWARDS" : `${episode.kind.toUpperCase()} ENCOUNTER · REQ LV ${episode.level}${episode.level > 1 ? " · PREV TILE" : ""} · +${episode.kind === "job" ? "JOB CHANGE" : episode.kind === "field" ? "1 SP" : "2 SP"}`}
             </div>
           </div>
           {phase === "menu" && <button className="sl-btn sl-btn-danger px-3 text-[10px]" onClick={close}>RETREAT</button>}
@@ -318,8 +321,7 @@ export function StoryBattle() {
                   <>
                     <div className="font-sys text-[10px] tracking-[0.2em] text-[color:var(--green)]">FIRST CLEAR</div>
                     <p className="text-[12px] text-[color:var(--text-bright)] mt-1">
-                      +{episode.gold} gold · {episode.cost} stat point{episode.cost === 1 ? "" : "s"} spent
-                      {episode.grantsSkill ? " · a free class skill if any remain unlearned" : ""}
+                      +{episode.gold} gold · +{episode.kind === "job" ? "Job Change ceremony" : `${episode.kind === "field" ? 1 : 2} skill point${episode.kind === "field" ? "" : "s"}`}
                     </p>
                     <p className="font-mono text-[9.5px] text-[color:var(--text-dim)] mt-1">{episode.rewardNote}</p>
                   </>
