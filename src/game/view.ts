@@ -63,6 +63,13 @@ export class AshenGame {
   private hurtT = 0;
   showColl = false;
   noclip = false; // F5 (dev/editor only): free walk so you can inspect sealed rooms while tracing
+  // ---- progress persistence ----
+  // Any event that moves the ledger marks the save dirty; update() debounces it
+  // into one write. pagehide/hidden flushes immediately. Rest is a hard save.
+  private saveDirtyT = -1;
+  private autoSaveT = 40;
+  private savedT = 0;
+  private pageHide = () => { if (this.started) this.saveGame(true); };
   // --- ART V3 / objective pointer / creator ---
   private pointerOn = true;
   private stuckT = 0;
@@ -185,9 +192,11 @@ export class AshenGame {
     // teleports you through a wall.
     this.visHud = () => {
       this.paused = document.hidden;
-      if (!this.paused) this.last = performance.now();
+      if (this.paused) this.saveGame(true); // leaving the tab is exactly when crashes happen
+      else this.last = performance.now();
     };
     document.addEventListener("visibilitychange", this.visHud);
+    window.addEventListener("pagehide", this.pageHide);
     this.input.attach();
     this.lastLevel = useGame.getState().level;
   }
@@ -219,6 +228,8 @@ export class AshenGame {
     cancelAnimationFrame(this.raf);
     if (this.keyHud) window.removeEventListener("keydown", this.keyHud);
     if (this.visHud) document.removeEventListener("visibilitychange", this.visHud);
+    window.removeEventListener("pagehide", this.pageHide);
+    this.saveGame(true);
     this.input.detach();
     this.stopTrack();
     this.started = false;
@@ -246,6 +257,7 @@ export class AshenGame {
     this.encCooldown = 6; this.steps = 0; // arrive in peace, not mid-ambush
     this.editor?.reloadDraftFor(id);
     if (playMusic) this.playTrack(this.floor.music);
+    this.markSaveDirty(); // every floor change — travel, region jump, or resume — lands in the ledger
   }
   private isDevBuild() {
     return (typeof import.meta !== "undefined" && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true)
@@ -412,15 +424,16 @@ export class AshenGame {
   private interact() {
     const hit = this.nearestInteract();
     if (!hit) return;
-    if (hit.kind === "prop" && hit.key === "save") { this.saveGame(); return; }
+    if (hit.kind === "prop" && hit.key === "save") { this.saveGame(); this.lastSafe = { x: this.px, y: this.py }; return; }
     if (hit.kind === "prop" && hit.key === "bossGate") { this.startBoss(); return; }
     if (hit.kind === "prop" && hit.key === "boss") { this.startRegionBoss(); return; }
     if (hit.kind === "prop" && hit.key === "gate") { this.tryGate(); return; }
     if (hit.kind === "prop" && hit.key === "rest") {
       this.flags.floorHp = this.floorPool();
+      this.saveGame(); // a rest fire IS the checkpoint: explicit, audible, remembered
       Sfx.heal();
       this.pagesActor = null;
-      this.pages = { lines: [{ text: "You sit down on the flat stone that is definitely furniture. The burn leaves your feet first, then the noise, then — eventually — the part of you that counts steps. [J] journal · [M] the camp mirror keeps your reflection until you look" }], idx: 0, t: 0 };
+      this.pages = { lines: [{ text: "You sit down on the flat stone that is definitely furniture. The burn leaves your feet first, then the noise, then — eventually — the part of you that counts steps. The fire logs your position: PROGRESS SAVED. [J] journal · [M] the camp mirror keeps your reflection until you look" }], idx: 0, t: 0 };
       this.mode = "talk";
       return;
     }
@@ -499,6 +512,7 @@ export class AshenGame {
       const lines = regionArrive(to, this.flags);
       if (lines.length) { this.pages = { lines, idx: 0, t: 0 }; this.mode = "talk"; }
       this.playTrack(this.floor.music);
+      this.markSaveDirty(); // arrived on a new floor: remember it even if the tab dies at spawn
     };
   }
   private startRegionBoss() {
@@ -564,6 +578,7 @@ export class AshenGame {
     const sp = this.floor.objects.spawn;
     this.warpPlayer(sp[0], sp[1]);
     this.flags.floorHp = 0; // refilled on the next frame
+    this.markSaveDirty(); // deaths belong in the ledger too
     this.battle = null;
     this.mode = "world";
     this.encCooldown = 10; this.steps = 0; // the floor that killed you waits a full ten seconds before it tries again
@@ -775,6 +790,7 @@ export class AshenGame {
       ? `LV ${gs.level} · XP ${gs.xp}/${gs.xpMax} · SP ${gs.sp} [X] · BOSS REC LV ${boG.level}`
       : `LV ${gs.level} · XP ${gs.xp}/${gs.xpMax} · SP ${gs.sp} [X]`;
     drawText(g, grow, VIEW_W - 10, y + hh + 26, 9, gs.sp > 0 ? "#ffd88a" : "#5d7396", "right");
+    if (this.savedT > 0) drawText(g, "✓ saved", VIEW_W - 10, y + hh + 38, 9, `rgba(127,255,158,${clamp(this.savedT, 0, 1).toFixed(2)})`, "right");
   }
   private renderPrompt(g: CanvasRenderingContext2D) {
     const hit = this.nearestInteract();
@@ -965,6 +981,14 @@ export class AshenGame {
       Sfx.levelup();
     }
     if (this.toast) { this.toast.t -= dt; if (this.toast.t <= 0) this.toast = null; }
+    if (this.savedT > 0) this.savedT -= dt;
+    // debounced autosave + periodic heartbeat — never mid-battle, never mid-transition
+    if (this.saveDirtyT >= 0 && this.transDir === 0 && this.mode !== "battle") {
+      this.saveDirtyT -= dt;
+      if (this.saveDirtyT < 0) this.saveGame(true);
+    }
+    this.autoSaveT -= dt;
+    if (this.autoSaveT <= 0 && this.mode === "world" && this.transDir === 0) this.markSaveDirty();
     if (this.transDir !== 0) {
       this.transT = clamp(this.transT + this.transDir * dt * 2.4, 0, 1);
       if (this.transT >= 1 && this.transDir === 1) this.transDir = -1;
@@ -1108,6 +1132,7 @@ export class AshenGame {
     const b = this.battle;
     if (!b || !b.result) { this.battle = null; this.mode = "world"; this.playTrack("town"); return; }
     const r = b.result;
+    this.markSaveDirty(); // whatever the outcome, the ledger moved
     this.stopTrack();
     const store = useGame.getState();
     const eid = b.enemy.id;
@@ -1241,10 +1266,14 @@ export class AshenGame {
     this.mode = "talk";
     Sfx.levelup();
   }
-  private saveGame() {
+  private markSaveDirty() { if (this.saveDirtyT < 0) this.saveDirtyT = 1.4; }
+  private saveGame(quiet = false) {
     writeSave<WorldSaveData>(SAVE_KEY, { region: this.regionId, x: this.px, y: this.py, flags: this.flags });
-    Sfx.save();
     this.flags.saved = true;
+    this.saveDirtyT = -1;
+    this.autoSaveT = 40;
+    if (quiet) { this.savedT = 1.6; return; }
+    Sfx.save();
     this.toast = { text: "[PROGRESS WRITTEN TO THE GATE. THE TOWN WILL REMEMBER.]", t: 3.2 };
   }
   private updateShop(dt: number) {
@@ -1269,6 +1298,7 @@ export class AshenGame {
         potions: it.id === "potion" ? st.potions + 1 : st.potions,
       }));
       if (it.id !== "potion") this.flags.bought[it.id] = (this.flags.bought[it.id] ?? 0) + 1;
+      this.markSaveDirty();
       Sfx.heal();
       this.pages = { lines: shopThanks(it.id), idx: 0, t: 0, after: () => { this.mode = "shop"; } };
       this.mode = "talk";
@@ -1283,7 +1313,9 @@ export class AshenGame {
     drawText(g, "— a training quest for people who train at 5 AM —", VIEW_W / 2, 164, 13, "#6d80a8", "center");
     const s = useGame.getState();
     drawText(g, `SYSTEM LINK: ${s.name || "GUEST"}   LV ${s.level} (real-world)   ${isMuted() ? "MUTED [M]" : "SOUND [M]"}`, VIEW_W / 2, 246, 12, "#7fe7ff", "center");
-    if (Math.floor(performance.now() / 430) % 2 === 0) drawText(g, "PRESS  Z", VIEW_W / 2, 312, 22, "#ffffff", "center");
+    if (Math.floor(performance.now() / 430) % 2 === 0)
+      drawText(g, this.hasSave ? "PRESS  Z — CONTINUE: " + (this.floor.name || this.regionId).toUpperCase() : "PRESS  Z", VIEW_W / 2, 312, 22, "#ffffff", "center");
+    if (this.hasSave) drawText(g, "saved expedition found — floors, debts and all", VIEW_W / 2, 336, 11, "#5d7396", "center");
     drawText(g, "ARROWS/WASD move · Z confirm · X status · SHIFT dash (LV 5+) · J journal · T pointer on/off · M mirror (at rest)", VIEW_W / 2, 396, 10, "#59708f", "center");
     drawText(g, "F fullscreen · J journal · T pointer · F4 art status · F2 editor (dev) · F3 collision", VIEW_W / 2, 412, 10, "#59708f", "center");
   }
@@ -1721,6 +1753,7 @@ export class AshenGame {
   private afterTalk(key: string) {
     const f = this.flags;
     f.met[key] = (f.met[key] ?? 0) + 1;
+    this.markSaveDirty(); // every conversation is a checkpoint
     if (key === "dog.rock") f.dogFound = true;
     if (key === "kid.lost" && f.dogFound) f.dogReturned = true;
     if (key === "inn.baek" && f.dogReturned && !f.hasKey) f.hasKey = true;
