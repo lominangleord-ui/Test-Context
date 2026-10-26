@@ -3,13 +3,14 @@
 // Per floor: a base fill, then water/solid/hazard polygons, then OPEN carving
 // (roads, plazas, pads), then entity standing pockets, exits, props, border ring.
 // Run: npx tsx scripts/floors.mts  [floorIds...]
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { writeFileSync, readFileSync } from "node:fs";
 
 const CW = 480, CH = 270, CELL = 4;
 type P = [number, number][];
 type Spec = {
   base: 0 | 1 | 2;                       // WALK | SOLID | WATER
+  lavaHazard?: boolean;                  // orange paint becomes HAZARD (walkable, burns)
   water?: P[]; solid?: P[]; hazard?: P[];
   bitmap?: string;                       // traced-mask override: scripts/<floor>.cells.json (from traceimport)
   openRects?: number[][];                // [x,y,w,h] walkable after everything
@@ -63,6 +64,7 @@ const SPECS: Record<string, Spec> = {
     ],
   },
   caverns: {
+    lavaHazard: true, // the lava tongues are HAZARD now: you can walk them, they eat your feet
     base: 1, // solid rock — carve the cavern
     discsOpen: [[228, 152, 150], [180, 432, 142], [660, 210, 142], [952, 322, 132], [1152, 262, 108], [302, 742, 150], [964, 724, 195], [1662, 560, 185], [1466, 902, 150], [1748, 242, 140], [966, 992, 112]],
     roads: [
@@ -166,7 +168,7 @@ const SPECS: Record<string, Spec> = {
   },
 };
 
-function run(id: string) {
+async function run(id: string) {
   const spec = SPECS[id];
   if (!spec) { console.log("no poly spec for", id); return; }
   const c = createCanvas(CW, CH); const g = c.getContext("2d");
@@ -200,14 +202,22 @@ function run(id: string) {
   const ellip = (r: number[], v: number) => { for (let cy = Math.max(0, Math.floor((r[1] - r[3]) / CELL)); cy <= Math.min(CH - 1, Math.ceil((r[1] + r[3]) / CELL)); cy++) for (let cx = Math.max(0, Math.floor((r[0] - r[2]) / CELL)); cx <= Math.min(CW - 1, Math.ceil((r[0] + r[2]) / CELL)); cx++) { const px = cx * CELL + 2, py = cy * CELL + 2; if (((px - r[0]) / r[2]) ** 2 + ((py - r[1]) / r[3]) ** 2 <= 1) cells[cy * CW + cx] = v; } };
   const road = (pts: number[][], w: number) => { for (let i = 0; i < pts.length - 1; i++) { const [x0, y0] = pts[i], [x1, y1] = pts[i + 1]; const len = Math.hypot(x1 - x0, y1 - y0); for (let t = 0; t <= len; t += w * 0.4) disc([x0 + ((x1 - x0) * t) / len, y0 + ((y1 - y0) * t) / len, w / 2], 0); disc([x1, y1, w / 2], 0); } };
 
+  // Paint order: the big OPEN volumes carve first, THEN the solids sit back on
+  // top — otherwise an openRect (a great hall, a road) silently erases the
+  // authored blockers inside it (throne plinth, stalagmites). Water rides last.
+  // Order v3: broad bodies first (water, painted solids, hazard), then the big
+  // OPEN volumes (halls, islands, roads) carve through them — roads and stair
+  // bowls must stay cut across painted masses. Then the PRECISE authored
+  // blockers (rects/discs: thrones, plinths, colonnade) sit back on top so an
+  // open rect can never erase a deliberate blocker. Water rects ride last.
   for (const p of spec.water ?? []) paintPoly(p, 2);
   for (const p of spec.solid ?? []) paintPoly(p, 1);
   for (const p of spec.hazard ?? []) paintPoly(p, 3);
-  for (const r of spec.solidRects ?? []) rect(r, 1);
-  for (const d of spec.discsSolid ?? []) disc(d, 1);
   for (const r of spec.openRects ?? []) rect(r, 0);
   for (const d of spec.discsOpen ?? []) disc(d, 0);
   for (const r of spec.roads ?? []) road(r.pts, r.w);
+  for (const r of spec.solidRects ?? []) rect(r, 1);
+  for (const d of spec.discsSolid ?? []) disc(d, 1);
   for (const r of spec.waterRects ?? []) rect(r, 2); // water rides ABOVE the open carving — pools survive the hall rect
 
   const o = JSON.parse(readFileSync(`public/art/floors/${id}/objects.json`, "utf8"));
@@ -232,6 +242,46 @@ function run(id: string) {
   for (let cx = 0; cx < CW; cx++) { if (!(o.exits ?? []).some((e: { x: number; y: number; w: number; h: number }) => e.x < cx * CELL + CELL && e.x + e.w > cx * CELL && e.y < 0)) { cells[cx] = cells[cx] === 4 ? 4 : 1; cells[(CH - 1) * CW + cx] = cells[(CH - 1) * CW + cx] === 4 ? 4 : 1; } }
   for (let cy = 0; cy < CH; cy++) { for (const r of [1]) { cells[cy * CW + r] = cells[cy * CW + r] === 4 ? 4 : 1; cells[cy * CW + CW - 1 - r] = cells[cy * CW + CW - 1 - r] === 4 ? 4 : 1; } if (!(o.exits ?? []).some((e: { x: number; y: number; w: number; h: number }) => e.y < cy * CELL + CELL && e.y + e.h > cy * CELL && e.x < 0)) { cells[cy * CW] = cells[cy * CW] === 4 ? 4 : 1; cells[cy * CW + CW - 1] = cells[cy * CW + CW - 1] === 4 ? 4 : 1; } }
 
+  // ---- art post-passes: the mask must not contradict the painting ----
+  // (1) BLUE-on-BRIGHT: a WATER cell whose art underneath is light (luma>=75) is
+  //     painted SHALLOW bog or a boardwalk the old hand-rects clipped — carve to WALK.
+  //     Deep pools stay dark and stay blocking. (The ashenveil bank-ring keeps its
+  //     cells because the pass never touches border rows and never re-opens SOLID.)
+  // (2) ORANGE (caverns): strong lava hue votes -> HAZARD, walkable-but-burns, so
+  //     the lava you SEE finally does what it looks like. Border rings are spared.
+  if (!spec.bitmap) {
+    const ground = await loadImage(`public/art/floors/${id}/ground.png`);
+    const gc = createCanvas(ground.width, ground.height); const gg = gc.getContext("2d");
+    gg.drawImage(ground as never, 0, 0);
+    const gd = gg.getImageData(0, 0, gc.width, gc.height).data;
+    const S = ground.width / CW; // art px per mask cell
+    let carved = 0, haz = 0;
+    for (let cy = 0; cy < CH; cy++) for (let cx = 0; cx < CW; cx++) {
+      const i = cy * CW + cx;
+      const isBorder = cx < 2 || cy < 2 || cx >= CW - 2 || cy >= CH - 2;
+      if (cells[i] === 2 && !isBorder) {
+        let sum = 0, brs = 0;
+        for (let py = 0; py < S; py++) for (let px = 0; px < S; px++) {
+          const j = (((cy * S + py) | 0) * gc.width + ((cx * S + px) | 0)) * 4;
+          sum += (gd[j] + gd[j + 1] + gd[j + 2]) / 3;
+          brs += gd[j + 2] - gd[j];
+        }
+        const luma = sum / (S * S), br = brs / (S * S);
+        if (luma >= 75 && (luma >= 100 || br <= 30)) { cells[i] = 0; carved++; } // pool highlights (dim, blue-strong) survive; planks & glow-floor don't
+      }
+      if (spec.lavaHazard && !isBorder && (cells[i] === 1 || cells[i] === 2)) {
+        let votes = 0;
+        for (let py = 0; py < S; py += 1) for (let px = 0; px < S; px += 1) {
+          const j = ((cy * S + py) | 0) * gc.width + ((cx * S + px) | 0);
+          const r = gd[j * 4], g2 = gd[j * 4 + 1], b = gd[j * 4 + 2];
+          if (r > 170 && r - b > 70 && g2 > 80 && g2 < 175) votes++;
+        }
+        if (votes >= S * S * 0.3) { cells[i] = 3; haz++; }
+      }
+    }
+    if (carved || haz) console.log(`  ${id}: art-pass carved ${carved} shallow-water cells on bright paint, ${haz} lava cells -> HAZARD`);
+  }
+
   const im = g.createImageData(CW, CH);
   const COL: Record<number, number[]> = { 0: [255, 255, 255], 1: [0, 0, 0], 2: [30, 70, 220], 3: [228, 48, 48], 4: [46, 204, 92] };
   let walk = 0;
@@ -240,5 +290,5 @@ function run(id: string) {
   writeFileSync(`public/art/floors/${id}/collision.png`, c.toBuffer("image/png"));
   console.log(`${id}: ${(100 * walk / cells.length).toFixed(1)}% walkable (solid+water+hazard ${(100 - 100 * walk / cells.length).toFixed(1)}%)`);
 }
-for (const id of process.argv.slice(2).length ? process.argv.slice(2) : ["verdant", "marsh", "caverns", "citadel", "ashenveil"]) run(id);
+for (const id of process.argv.slice(2).length ? process.argv.slice(2) : ["verdant", "marsh", "caverns", "citadel", "ashenveil"]) await run(id);
 console.log("floorpolys done");

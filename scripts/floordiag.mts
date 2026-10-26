@@ -17,12 +17,15 @@ const { makeFloor, loadFloorArt, MASK, posBlocked } = await import("../src/game/
 const { Art } = await import("../src/game/artset.ts");
 const NAME: Record<number, string> = { 0: "WALK", 1: "SOLID", 2: "WATER", 3: "HAZARD", 4: "EXIT" };
 // expected painted features per floor (world units): [x, y, expectedClass]
+// (exits below are auto-derived from objects.json centers — pad-edge misses were
+// a probe bug, not a mask bug; keep feature probes pinned to painted truth)
 const PROBES: Record<string, [number, number, number][]> = {
   verdant: [[700, 30, 4], [900, 880, 0], [1370, 730, 1], [700, 100, 0], [480, 224, 1], [960, 680, 0], [1470, 270, 2]],
-  marsh: [[722, 458, 0], [952, 1046, 4], [200, 150, 2], [1218, 508, 0], [1760, 100, 1]],
-  caverns: [[196, 110, 0], [1128, 1046, 4], [1500, 300, 1], [916, 322, 0], [940, 470, 1]],
-  citadel: [[960, 530, 0], [56, 530, 4], [490, 200, 1], [960, 72, 1], [1600, 110, 1]],
-  ashenveil: [[952, 978, 0], [40, 538, 4], [470, 522, 0], [700, 960, 1], [1400, 760, 1]],
+  // v5: bright-paint carve means WATER survives only where the art is actually dark
+  marsh: [[722, 458, 0], [1073, 658, 2], [1112, 584, 1], [170, 360, 1]],
+  caverns: [[196, 110, 0], [1350, 130, 3], [916, 322, 0], [900, 600, 0]],
+  citadel: [[945, 902, 0], [395, 200, 2], [960, 60, 1], [900, 600, 0]],
+  ashenveil: [[952, 978, 0], [700, 520, 0], [100, 700, 2], [630, 150, 1]],
 };
 for (const id of process.argv.slice(2).length ? process.argv.slice(2) : ["verdant", "marsh", "caverns", "citadel", "ashenveil"]) {
   const fl = makeFloor(id);
@@ -44,7 +47,8 @@ for (const id of process.argv.slice(2).length ? process.argv.slice(2) : ["verdan
   console.log(`  classes: WALK ${pct(0)}  SOLID ${pct(1)}  WATER ${pct(2)}  HAZARD ${pct(3)}  EXIT ${pct(4)}`);
   console.log(`  spawn (${fl.objects.spawn[0]},${fl.objects.spawn[1]}) cell = ${NAME[spawnCell]}  posBlocked=${posBlocked(fl, fl.objects.spawn[0], fl.objects.spawn[1])}`);
   let bad = 0;
-  for (const [x, y, want] of PROBES[id] ?? []) {
+  const exitProbes = (fl.objects.exits ?? []).map((e) => [e.x + e.w / 2, e.y + e.h / 2, 4] as [number, number, number]);
+  for (const [x, y, want] of [...(PROBES[id] ?? []), ...exitProbes]) {
     const got = m.cells[Math.floor(y / m.cell) * m.cw + Math.floor(x / m.cell)];
     const ok = got === want;
     if (!ok) bad++;

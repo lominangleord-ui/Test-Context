@@ -69,6 +69,7 @@ export class AshenGame {
   private saveDirtyT = -1;
   private autoSaveT = 40;
   private savedT = 0;
+  private unstickCd = 0;
   private pageHide = () => { if (this.started) this.saveGame(true); };
   // --- ART V3 / objective pointer / creator ---
   private pointerOn = true;
@@ -321,6 +322,8 @@ export class AshenGame {
       else this.stuckT += dt;
       if (this.stuckT > 600 && !this.hintShown.has(nid)) { this.hintShown.add(nid); this.toastNow("[STUCK?] " + node.hint); }
     }
+    this.unstickCd -= dt;
+    this.unstickCheck(); // every floor must stay walkable, whatever the save said
     const inp = this.input;
     const lvl = useGame.getState().level;
     const dash = lvl >= 5 && inp.down("menu");
@@ -344,7 +347,8 @@ export class AshenGame {
       // SAFETY NET: if the ground turns solid under you (late collision.png
       // load, an editor paint stroke), snap to the last valid spot and warn ONCE.
       if (!this.noclip && posBlocked(this.floor, this.px, this.py, flags)) {
-        this.px = this.lastSafe.x; this.py = this.lastSafe.y;
+        if (posBlocked(this.floor, this.lastSafe.x, this.lastSafe.y, flags)) this.unstickCheck(); // both ends blocked: slide out, don't pin
+        else { this.px = this.lastSafe.x; this.py = this.lastSafe.y; }
         if (!this.warnedSolid) {
           this.warnedSolid = true;
           console.warn("[ashenveil] player entered a solid cell — snapped to last valid position (mask changed underfoot?)");
@@ -1267,7 +1271,72 @@ export class AshenGame {
     Sfx.levelup();
   }
   private markSaveDirty() { if (this.saveDirtyT < 0) this.saveDirtyT = 1.4; }
-  private saveGame(quiet = false) {
+  /** No floor gets to keep you. Stale saves, late mask loads or a bad editor
+   * draft can park the player inside geometry — and the snap-back net would
+   * then pin them forever ("can't move an inch"). Slide to the nearest open
+   * cell and say so. Returns true if the player ended the call on clear ground. */
+  private unstickCheck(): boolean {
+    if (this.noclip) return true;
+    const flags = this.flags as unknown as Record<string, boolean>;
+    if (!posBlocked(this.floor, this.px, this.py, flags)) { this.unstickCd = 0; return true; }
+    if (this.unstickCd > 0) return false;
+    const land = (x: number, y: number) => {
+      this.warpPlayer(x, y);
+      Sfx.hurt();
+      this.toast = { text: "[THE GROUND REFUSES YOU — slid to the nearest solid footing]", t: 2.8 };
+      console.warn(`[ashenveil] player was pinned in geometry on ${this.regionId} — re-anchored`);
+      this.markSaveDirty(); // the trapped coords must never re-enter the ledger
+      this.unstickCd = 2;
+    };
+    // BFS over the mask grid: the TRUE nearest open cell, no matter how deep the
+    // hall a stale save parked you in. Ring sampling gave up at ~160u and pinned people.
+    const m = this.floor.mask;
+    const W = m.cw, H = m.ch;
+    const seen = new Uint8Array(W * H);
+    const q: number[] = [];
+    const x0 = clamp(Math.floor(this.px / m.cell), 0, W - 1);
+    const y0 = clamp(Math.floor(this.py / m.cell), 0, H - 1);
+    q.push(y0 * W + x0); seen[q[0]] = 1;
+    const tryCell = (j: number, accept: (v: number) => boolean): boolean => {
+      const v = m.cells[j];
+      if (!accept(v)) return false;
+      const fx = (j % W) * m.cell + m.cell / 2, fy = ((j / W) | 0) * m.cell + m.cell / 2;
+      if (posBlocked(this.floor, fx, fy, flags)) return false;
+      land(fx, fy);
+      return true;
+    };
+    const isLand = (v: number) => v === 0 || v === 4;
+    let head = 0;
+    for (; head < q.length; head++) {
+      const i = q[head], x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = ny * W + nx;
+        if (seen[j]) continue;
+        seen[j] = 1;
+        if (isLand(m.cells[j]) && tryCell(j, isLand)) return true;
+        q.push(j);
+      }
+    }
+    // last resort: a hazard cell beats a permanent freeze (it burns, but you can walk)
+    seen.fill(0); q.length = 0; q.push(y0 * W + x0); seen[q[0]] = 1;
+    for (head = 0; head < q.length; head++) {
+      const i = q[head], x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = ny * W + nx;
+        if (seen[j]) continue;
+        seen[j] = 1;
+        if (m.cells[j] === 3 && tryCell(j, () => true)) return true;
+        q.push(j);
+      }
+    }
+    this.unstickCd = 3; // nothing found yet (mask may still be loading): retry soon, silently
+    return false;
+  }
+private saveGame(quiet = false) {
     writeSave<WorldSaveData>(SAVE_KEY, { region: this.regionId, x: this.px, y: this.py, flags: this.flags });
     this.flags.saved = true;
     this.saveDirtyT = -1;

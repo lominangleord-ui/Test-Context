@@ -124,3 +124,24 @@ F2 editor. Coordinates are ground.png px (= world units, 1920×1080).
     (prop stamps — verdant has none with colliders — NPC/sign/rest/boss/spawn/exit pads,
     border ring preserving EXIT cells). roads/plaza/camp aisles are OPEN by construction.
     scripts/maskdiff.mts re-verifies agreement against the ref (0.04%).
+
+42. V5 — every-area-playable sweep (2026-10-27). Two changes under the same rule
+    the verdant V4 trace proved: collision may only sit on painted impassables.
+    (a) floorpolys art post-pass (all hand-spec floors): WATER cells whose art
+    underneath is bright (luma>=75 and (luma>=100 or blue-minus-red<=30)) are
+    carved to WALK — the old hand-guessed water rects sat on top of the marsh
+    boardwalks and ashenveil's tile rooms; deep pools (dim, blue-strong) survive.
+    caverns lava paint (orange votes) becomes HAZARD: walkable, burns feet, and
+    finally does what it looks like. Paint order v3: painted solids first, the
+    big open volumes carve them, then PRECISE authored rects/discs (throne,
+    statue plinth, colonnade) re-stamp on top — a hall openRect can no longer
+    erase a deliberate blocker, and stair bowls stay carved through wall bands.
+    (b) The anti-pin guarantee (view.ts unstickCheck): if geometry ever ends up
+    under the player (stale save from an older mask, late collision.png load,
+    a bad editor draft), a mask-grid BFS slides them to the TRUE nearest open
+    cell (hazard as last resort) with a sting + toast — the old snap-back net
+    restored a lastSafe that could be equally trapped, which is exactly the
+    "can't move an inch" freeze reported on area 2. Verified by scripts/
+    movecheck.mts: all landing spots (spawn/exits/rests/boss) walkable on all
+    five floors, and four deliberate deep-trap spots (inside the citadel gallery
+    hall!) all re-anchor within seconds.
